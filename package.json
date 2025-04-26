@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-  "start": "node index.js"
-},
+    "start": "node index.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TimCortex/xtb-dashboard-backend.git"
@@ -16,5 +16,9 @@
     "url": "https://github.com/TimCortex/xtb-dashboard-backend/issues"
   },
   "homepage": "https://github.com/TimCortex/xtb-dashboard-backend#readme",
-  "description": ""
+  "description": "",
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.1"
+  }
 }
