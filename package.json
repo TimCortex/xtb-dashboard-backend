@@ -1,0 +1,20 @@
+{
+  "name": "xtb-dashboard-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+  "start": "node index.js"
+},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TimCortex/xtb-dashboard-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/TimCortex/xtb-dashboard-backend/issues"
+  },
+  "homepage": "https://github.com/TimCortex/xtb-dashboard-backend#readme",
+  "description": ""
+}
