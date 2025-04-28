@@ -1,38 +1,30 @@
 const express = require('express');
 const axios = require('axios');
 const technicalIndicators = require('technicalindicators');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Polygon.io API
 const POLYGON_API_KEY = 'PxC6peU74MGVfAXPhqj704n6p64Jck8p';
-const SYMBOL = 'C:EURUSD'; // Forex pair in Polygon format
+const SYMBOL = 'C:EURUSD';
+const INTERVAL = '5'; // minutes
+const LIMIT = 100; // nombre de bougies à récupérer
 
-// Fonction pour récupérer les dernières bougies OHLC (5 min interval)
-async function fetchOHLCData() {
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-01-01/2024-12-31?limit=100&apiKey=${POLYGON_API_KEY}`;
-  try {
-    const response = await axios.get(url);
-    return response.data.results || [];
-  } catch (error) {
-    console.error('Erreur Polygon API:', error.response?.data || error.message);
-    return [];
-  }
+async function fetchForexData() {
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${INTERVAL}/minute/2023-01-01/2023-12-31?adjusted=true&sort=desc&limit=${LIMIT}&apiKey=${POLYGON_API_KEY}`;
+  const { data } = await axios.get(url);
+  return data.results.reverse(); // du plus ancien au plus récent
 }
 
-// Fonction pour analyser les données avec les indicateurs techniques
-function analyzeData(candles) {
-  const closes = candles.map(c => c.c); // closing prices
-  const highs = candles.map(c => c.h);
-  const lows = candles.map(c => c.l);
+function analyze(data) {
+  const close = data.map(candle => candle.c);
 
-  const sma20 = technicalIndicators.SMA.calculate({ period: 20, values: closes });
-  const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: closes });
-  const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: closes });
-  const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: closes });
+  // Calculs
+  const sma20 = technicalIndicators.SMA.calculate({ period: 20, values: close });
+  const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
+  const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
+  const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: close });
   const macd = technicalIndicators.MACD.calculate({
-    values: closes,
+    values: close,
     fastPeriod: 12,
     slowPeriod: 26,
     signalPeriod: 9,
@@ -41,52 +33,55 @@ function analyzeData(candles) {
   });
   const bb = technicalIndicators.BollingerBands.calculate({
     period: 20,
-    values: closes,
-    stdDev: 2
+    stdDev: 2,
+    values: close
   });
-  const stochastic = technicalIndicators.Stochastic.calculate({
-    high: highs,
-    low: lows,
-    close: closes,
+  const stoch = technicalIndicators.Stochastic.calculate({
+    high: data.map(c => c.h),
+    low: data.map(c => c.l),
+    close,
     period: 14,
     signalPeriod: 3
   });
 
-  const lastClose = closes[closes.length - 1];
-  const lastRSI = rsi14[rsi14.length - 1];
-  const lastMACD = macd[macd.length - 1];
-  const lastBB = bb[bb.length - 1];
-  const lastStoch = stochastic[stochastic.length - 1];
+  const latest = {
+    price: close.at(-1),
+    sma20: sma20.at(-1),
+    ema9: ema9.at(-1),
+    ema21: ema21.at(-1),
+    rsi14: rsi14.at(-1),
+    macd: macd.at(-1),
+    bb: bb.at(-1),
+    stoch: stoch.at(-1)
+  };
 
-  // Analyse simple basée sur RSI et MACD pour exemple
-  let signal = 'Neutral';
-  if (lastRSI < 30 && lastMACD.MACD > lastMACD.signal) {
-    signal = 'Buy';
-  } else if (lastRSI > 70 && lastMACD.MACD < lastMACD.signal) {
-    signal = 'Sell';
+  // Détermination d’un signal simple
+  let signal = 'WAIT';
+  if (latest.ema9 > latest.ema21 && latest.rsi14 > 50 && latest.macd.histogram > 0 && latest.stoch.k > latest.stoch.d) {
+    signal = 'BUY';
+  } else if (latest.ema9 < latest.ema21 && latest.rsi14 < 50 && latest.macd.histogram < 0 && latest.stoch.k < latest.stoch.d) {
+    signal = 'SELL';
   }
 
-  return {
-    lastClose,
-    lastRSI,
-    lastMACD,
-    lastBB,
-    lastStoch,
-    signal
-  };
+  return { ...latest, signal };
 }
 
 // Endpoint principal
-app.get('/analyze', async (req, res) => {
-  const candles = await fetchOHLCData();
-  if (candles.length === 0) {
-    return res.status(500).send('Erreur récupération des données OHLC');
-  }
-  const analysis = analyzeData(candles);
-  res.json(analysis);
+app.get('/', (req, res) => {
+  res.send('ZenScalp backend actif 🚀');
 });
 
-// Démarrage du serveur
+app.get('/eurusd', async (req, res) => {
+  try {
+    const candles = await fetchForexData();
+    const result = analyze(candles);
+    res.json(result);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Erreur durant l’analyse');
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`Serveur en ligne sur le port ${PORT}`);
+  console.log(`🟢 Serveur ZenScalp lancé sur le port ${PORT}`);
 });
