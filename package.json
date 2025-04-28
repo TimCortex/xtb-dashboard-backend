@@ -18,7 +18,9 @@
   "homepage": "https://github.com/TimCortex/xtb-dashboard-backend#readme",
   "description": "",
   "dependencies": {
+    "axios": "^1.9.0",
     "express": "^5.1.0",
+    "technicalindicators": "^3.1.0",
     "ws": "^8.18.1"
   }
 }
