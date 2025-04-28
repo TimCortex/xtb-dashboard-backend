@@ -10,19 +10,23 @@ const POLYGON_API_KEY = 'PxC6peU74MGVfAXPhqj704n6p64Jck8p';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
-let lastSignal = 'WAIT'; // Pour éviter les doublons d'alertes
+let lastSignal = 'WAIT'; // Pour éviter les doublons
 
-// Récupération des bougies 5 min
+// Récupérer les dernières 100 bougies 5 minutes
 async function fetchForexData() {
-  const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${today}/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const now = new Date();
+  const from = new Date(now.getTime() - (100 * 5 * 60 * 1000)); // 100 bougies de 5 min
+  const fromISO = from.toISOString();
+  const toISO = now.toISOString();
+
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${fromISO}/${toISO}?adjusted=true&sort=asc&apiKey=${POLYGON_API_KEY}`;
+  
   const { data } = await axios.get(url);
-  return data.results.reverse(); // plus ancien -> plus récent
+  return data.results || [];
 }
 
-// Analyse technique
 function analyze(data) {
-  const close = data.map(candle => candle.c);
+  const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
 
@@ -72,7 +76,6 @@ function analyze(data) {
   return { ...latest, signal };
 }
 
-// Envoi du message Discord
 async function sendDiscordAlert(analysis) {
   const message = {
     content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}`
@@ -80,7 +83,7 @@ async function sendDiscordAlert(analysis) {
   await axios.post(WEBHOOK_URL, message);
 }
 
-// Cron job toutes les 5 minutes
+// Cron toutes les 5 minutes
 cron.schedule('*/5 * * * *', async () => {
   try {
     const candles = await fetchForexData();
