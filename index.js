@@ -14,7 +14,8 @@ let lastSignal = 'WAIT'; // Pour éviter les doublons
 
 // Récupérer les dernières 100 bougies 5 minutes
 async function fetchForexData() {
-  const url = `https://api.polygon.io/v3/quotes/forex/EURUSD?apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/2024-04-27?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+
   const { data } = await axios.get(url);
   return [{
     c: data.results[0].p, // prix
