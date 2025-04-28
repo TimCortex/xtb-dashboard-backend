@@ -14,16 +14,15 @@ let lastSignal = 'WAIT'; // Pour éviter les doublons
 
 // Récupérer les dernières 100 bougies 5 minutes
 async function fetchForexData() {
-  const now = new Date();
-  const from = new Date(now.getTime() - (100 * 5 * 60 * 1000)); // 100 bougies de 5 min
-  const fromISO = from.toISOString();
-  const toISO = now.toISOString();
-
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${fromISO}/${toISO}?adjusted=true&sort=asc&apiKey=${POLYGON_API_KEY}`;
-  
+  const url = `https://api.polygon.io/v1/last/forex/EUR/USD?apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
-  return data.results || [];
+  return [{
+    c: data.last.ask, // dernier ask comme clôture
+    h: data.last.ask, // simplifié pour test
+    l: data.last.ask
+  }];
 }
+
 
 function analyze(data) {
   const close = data.map(c => c.c);
