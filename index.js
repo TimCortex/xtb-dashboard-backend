@@ -14,14 +14,15 @@ let lastSignal = 'WAIT'; // Pour éviter les doublons
 
 // Récupérer les dernières 100 bougies 5 minutes
 async function fetchForexData() {
-  const url = `https://api.polygon.io/v1/last/forex/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v3/quotes/forex/EURUSD?apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
   return [{
-    c: data.last.ask, // dernier ask comme clôture
-    h: data.last.ask, // simplifié pour test
-    l: data.last.ask
+    c: data.results[0].p, // prix
+    h: data.results[0].p, // simplifié
+    l: data.results[0].p
   }];
 }
+
 
 
 function analyze(data) {
