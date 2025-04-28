@@ -1,24 +1,31 @@
 const express = require('express');
 const axios = require('axios');
 const technicalIndicators = require('technicalindicators');
+const cron = require('node-cron');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const POLYGON_API_KEY = 'PxC6peU74MGVfAXPhqj704n6p64Jck8p';
 const SYMBOL = 'C:EURUSD';
-const INTERVAL = '5'; // minutes
-const LIMIT = 100; // nombre de bougies à récupérer
+const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
+let lastSignal = 'WAIT'; // Pour éviter les doublons d'alertes
+
+// Récupération des bougies 5 min
 async function fetchForexData() {
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${INTERVAL}/minute/2023-01-01/2023-12-31?adjusted=true&sort=desc&limit=${LIMIT}&apiKey=${POLYGON_API_KEY}`;
+  const today = new Date().toISOString().split('T')[0];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${today}/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
-  return data.results.reverse(); // du plus ancien au plus récent
+  return data.results.reverse(); // plus ancien -> plus récent
 }
 
+// Analyse technique
 function analyze(data) {
   const close = data.map(candle => candle.c);
+  const high = data.map(c => c.h);
+  const low = data.map(c => c.l);
 
-  // Calculs
   const sma20 = technicalIndicators.SMA.calculate({ period: 20, values: close });
   const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
   const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
@@ -37,8 +44,8 @@ function analyze(data) {
     values: close
   });
   const stoch = technicalIndicators.Stochastic.calculate({
-    high: data.map(c => c.h),
-    low: data.map(c => c.l),
+    high,
+    low,
     close,
     period: 14,
     signalPeriod: 3
@@ -55,7 +62,6 @@ function analyze(data) {
     stoch: stoch.at(-1)
   };
 
-  // Détermination d’un signal simple
   let signal = 'WAIT';
   if (latest.ema9 > latest.ema21 && latest.rsi14 > 50 && latest.macd.histogram > 0 && latest.stoch.k > latest.stoch.d) {
     signal = 'BUY';
@@ -66,20 +72,33 @@ function analyze(data) {
   return { ...latest, signal };
 }
 
-// Endpoint principal
-app.get('/', (req, res) => {
-  res.send('ZenScalp backend actif 🚀');
-});
+// Envoi du message Discord
+async function sendDiscordAlert(analysis) {
+  const message = {
+    content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}`
+  };
+  await axios.post(WEBHOOK_URL, message);
+}
 
-app.get('/eurusd', async (req, res) => {
+// Cron job toutes les 5 minutes
+cron.schedule('*/5 * * * *', async () => {
   try {
     const candles = await fetchForexData();
-    const result = analyze(candles);
-    res.json(result);
+    const analysis = analyze(candles);
+    console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
+
+    if (analysis.signal !== 'WAIT' && analysis.signal !== lastSignal) {
+      await sendDiscordAlert(analysis);
+      lastSignal = analysis.signal;
+    }
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Erreur durant l’analyse');
+    console.error('Erreur Cron:', err.message);
   }
+});
+
+// Route principale
+app.get('/', (req, res) => {
+  res.send('ZenScalp backend actif 🚀');
 });
 
 app.listen(PORT, () => {
