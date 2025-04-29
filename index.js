@@ -6,25 +6,22 @@ const cron = require('node-cron');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CONFIG
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
-let lastSignal = 'WAIT'; // Pour éviter les doublons
+let lastSignal = 'WAIT';
 
-// Récupération des dernières 100 bougies 5 minutes
+// Récupération des bougies Forex 5 minutes
 async function fetchForexData() {
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/2024-04-27?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
-
+  const today = new Date().toISOString().split('T')[0];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${today}/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
-  return data.results.map(candle => ({
-    c: candle.c,  // close
-    h: candle.h,  // high
-    l: candle.l   // low
-  })).reverse(); // du plus ancien au plus récent
+  return data.results.reverse();
 }
 
-// Analyse technique
+// Analyse des indicateurs
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -76,15 +73,43 @@ function analyze(data) {
   return { ...latest, signal };
 }
 
-// Envoi Discord
+// Fonction pour envoyer une alerte Discord
 async function sendDiscordAlert(analysis) {
+  const stopLossPips = 0.0010;
+  const takeProfitPips = 0.0020;
+  
+  let stopLoss, takeProfit;
+
+  if (analysis.signal === 'BUY') {
+    stopLoss = analysis.price - stopLossPips;
+    takeProfit = analysis.price + takeProfitPips;
+  } else if (analysis.signal === 'SELL') {
+    stopLoss = analysis.price + stopLossPips;
+    takeProfit = analysis.price - takeProfitPips;
+  }
+
   const message = {
-    content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}`
+    content: `📊 **Signal détecté: ${analysis.signal}**\n` +
+             `💰 **Prix**: ${analysis.price}\n` +
+             `📈 **RSI**: ${analysis.rsi14.toFixed(2)}\n` +
+             `📉 **MACD**: ${analysis.macd.histogram.toFixed(5)}\n` +
+             `🎯 **Stochastique**: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}\n` +
+             `🛡️ **StopLoss**: ${stopLoss.toFixed(5)}\n` +
+             `🎯 **TakeProfit**: ${takeProfit.toFixed(5)}`
+  };
+
+  await axios.post(WEBHOOK_URL, message);
+}
+
+// Fonction pour envoyer un heartbeat
+async function sendHeartbeat() {
+  const message = {
+    content: '🫀 **ZenScalp est actif** — Système OK ✅'
   };
   await axios.post(WEBHOOK_URL, message);
 }
 
-// Cron toutes les 5 minutes
+// Cron analyse toutes les 5 minutes
 cron.schedule('*/5 * * * *', async () => {
   try {
     const candles = await fetchForexData();
@@ -97,6 +122,16 @@ cron.schedule('*/5 * * * *', async () => {
     }
   } catch (err) {
     console.error('Erreur Cron:', err.message);
+  }
+});
+
+// Cron Heartbeat toutes les 30 minutes
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    await sendHeartbeat();
+    console.log('🫀 Heartbeat envoyé');
+  } catch (err) {
+    console.error('Erreur Heartbeat:', err.message);
   }
 });
 
