@@ -81,6 +81,14 @@ async function sendDiscordAlert(analysis) {
   await axios.post(WEBHOOK_URL, message);
 }
 
+// Fonction pour envoyer un heartbeat
+async function sendHeartbeat() {
+  const message = {
+    content: '🫀 **ZenScalp est actif** — Système OK ✅'
+  };
+  await axios.post(WEBHOOK_URL, message);
+}
+
 cron.schedule('*/2 * * * *', async () => {
   try {
     const candles = await fetchForexData();
@@ -93,6 +101,16 @@ cron.schedule('*/2 * * * *', async () => {
     }
   } catch (err) {
     console.error('Erreur Cron:', err.message);
+  }
+});
+
+// Cron Heartbeat toutes les 30 minutes
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    await sendHeartbeat();
+    console.log('🫀 Heartbeat envoyé');
+  } catch (err) {
+    console.error('Erreur Heartbeat:', err.message);
   }
 });
 
