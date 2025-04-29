@@ -12,20 +12,19 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 
 let lastSignal = 'WAIT'; // Pour éviter les doublons
 
-// Récupérer les dernières 100 bougies 5 minutes
+// Récupération des dernières 100 bougies 5 minutes
 async function fetchForexData() {
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/2024-04-27?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
 
   const { data } = await axios.get(url);
-  return [{
-    c: data.results[0].p, // prix
-    h: data.results[0].p, // simplifié
-    l: data.results[0].p
-  }];
+  return data.results.map(candle => ({
+    c: candle.c,  // close
+    h: candle.h,  // high
+    l: candle.l   // low
+  })).reverse(); // du plus ancien au plus récent
 }
 
-
-
+// Analyse technique
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -77,6 +76,7 @@ function analyze(data) {
   return { ...latest, signal };
 }
 
+// Envoi Discord
 async function sendDiscordAlert(analysis) {
   const message = {
     content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}`
