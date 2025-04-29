@@ -110,7 +110,7 @@ async function sendHeartbeat() {
 }
 
 // Cron analyse toutes les 5 minutes
-cron.schedule('*/5 * * * *', async () => {
+cron.schedule('*/2 * * * *', async () => {
   try {
     const candles = await fetchForexData();
     const analysis = analyze(candles);
