@@ -125,6 +125,7 @@ cron.schedule('* * * * *', async () => {
     const candles = await fetchForexData();
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
+    lastAnalysis = analysis;
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
 
     if (
@@ -143,6 +144,13 @@ cron.schedule('*/30 * * * *', async () => {
   await axios.post(WEBHOOK_URL, {
     content: `✅ Heartbeat: ZenScalp actif à ${new Date().toLocaleTimeString()}`
   });
+});
+
+let lastAnalysis = null;
+
+app.get('/indicateurs', (req, res) => {
+  if (!lastAnalysis) return res.status(404).json({ error: 'Aucune analyse encore disponible.' });
+  res.json(lastAnalysis);
 });
 
 app.get('/', (req, res) => {
