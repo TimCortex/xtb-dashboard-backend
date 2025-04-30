@@ -37,38 +37,31 @@ function detectLevels(data) {
 function calculateIchimoku(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-  const conversionPeriod = 9;
-  const basePeriod = 26;
+  const convPeriod = 9, basePeriod = 26;
 
-  const recentHighConv = Math.max(...high.slice(-conversionPeriod));
-  const recentLowConv = Math.min(...low.slice(-conversionPeriod));
-  const recentHighBase = Math.max(...high.slice(-basePeriod));
-  const recentLowBase = Math.min(...low.slice(-basePeriod));
+  const conv = (Math.max(...high.slice(-convPeriod)) + Math.min(...low.slice(-convPeriod))) / 2;
+  const base = (Math.max(...high.slice(-basePeriod)) + Math.min(...low.slice(-basePeriod))) / 2;
 
-  return {
-    conversion: (recentHighConv + recentLowConv) / 2,
-    base: (recentHighBase + recentLowBase) / 2
-  };
+  return { conversion: conv, base };
 }
 
-function calculateSLTP(price, data, signal) {
-  const last10Ranges = data.slice(-10).map(d => d.h - d.l);
-  const avgRange = last10Ranges.reduce((a, b) => a + b, 0) / last10Ranges.length;
-  const slDistance = parseFloat((avgRange * 1.2).toFixed(5)); // SL ~120% de la volatilité récente
-  const tpDistance = parseFloat((slDistance * 2).toFixed(5)); // Ratio 2:1
-
-  if (signal.includes('BUY')) {
-    return {
-      sl: parseFloat((price - slDistance).toFixed(5)),
-      tp: parseFloat((price + tpDistance).toFixed(5))
-    };
-  } else if (signal.includes('SELL')) {
-    return {
-      sl: parseFloat((price + slDistance).toFixed(5)),
-      tp: parseFloat((price - tpDistance).toFixed(5))
-    };
+function computeSLTP(price, signal, levels) {
+  let sl, tp;
+  if (levels.support.length && levels.resistance.length) {
+    if (signal.includes('BUY')) {
+      sl = levels.support[0];
+      tp = levels.resistance[0];
+    } else {
+      sl = levels.resistance[0];
+      tp = levels.support[0];
+    }
+  } else {
+    const percentSL = signal.includes('BUY') ? price * 0.001 : price * 0.001;
+    const percentTP = signal.includes('BUY') ? price * 0.002 : price * 0.002;
+    sl = signal.includes('BUY') ? price - percentSL : price + percentSL;
+    tp = signal.includes('BUY') ? price + percentTP : price - percentTP;
   }
-  return { sl: null, tp: null };
+  return { sl: sl.toFixed(5), tp: tp.toFixed(5) };
 }
 
 function analyze(data) {
@@ -79,17 +72,10 @@ function analyze(data) {
   const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
   const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
   const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: close });
-  const macd = technicalIndicators.MACD.calculate({
-    values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9,
-    SimpleMAOscillator: false, SimpleMASignal: false
-  });
-  const stoch = technicalIndicators.Stochastic.calculate({
-    high, low, close, period: 14, signalPeriod: 3
-  });
+  const macd = technicalIndicators.MACD.calculate({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+  const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 14, signalPeriod: 3 });
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
-  const bb = technicalIndicators.BollingerBands.calculate({
-    values: close, period: 20, stdDev: 2
-  });
+
   const ichimoku = calculateIchimoku(data);
 
   const latest = {
@@ -100,58 +86,49 @@ function analyze(data) {
     macd: macd.at(-1),
     stoch: stoch.at(-1),
     sar: sar.at(-1),
-    bb: bb.at(-1),
     ichimoku
   };
 
+  // Compter conditions remplies
+  let count = 0;
+  const isBuy = latest.ema9 > latest.ema21;
+  const isSell = latest.ema9 < latest.ema21;
+  if (latest.rsi14 > 50) count++;
+  if (latest.macd.histogram > 0) count++;
+  if (latest.stoch.k > latest.stoch.d) count++;
+  if (latest.sar < latest.price) count++;
+  if (latest.ichimoku.conversion > latest.ichimoku.base) count++;
+
   let signal = 'WAIT';
-  const bullish =
-    latest.ema9 > latest.ema21 &&
-    latest.rsi14 > 50 &&
-    latest.macd.histogram > 0 &&
-    latest.stoch.k > latest.stoch.d &&
-    latest.sar < latest.price &&
-    latest.ichimoku.conversion > latest.ichimoku.base;
-
-  const bearish =
-    latest.ema9 < latest.ema21 &&
-    latest.rsi14 < 50 &&
-    latest.macd.histogram < 0 &&
-    latest.stoch.k < latest.stoch.d &&
-    latest.sar > latest.price &&
-    latest.ichimoku.conversion < latest.ichimoku.base;
-
-  if (bullish) signal = 'STRONG BUY';
-  else if (latest.ema9 > latest.ema21 && latest.stoch.k > latest.stoch.d) signal = 'BUY';
-  else if (bearish) signal = 'STRONG SELL';
-  else if (latest.ema9 < latest.ema21 && latest.stoch.k < latest.stoch.d) signal = 'SELL';
+  if (isBuy) {
+    if (count >= 5) signal = 'STRONG BUY';
+    else if (count >= 3) signal = 'GOOD BUY';
+    else if (count >= 1) signal = 'BUY';
+  } else if (isSell) {
+    if (count >= 5) signal = 'STRONG SELL';
+    else if (count >= 3) signal = 'GOOD SELL';
+    else if (count >= 1) signal = 'SELL';
+  }
 
   return { ...latest, signal };
 }
 
-async function sendDiscordAlert(analysis, levels, sltp) {
-  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}
-🎯 RSI: ${analysis.rsi14?.toFixed(2)} | MACD: ${analysis.macd?.histogram?.toFixed(5)}
-📈 Stoch K: ${analysis.stoch?.k?.toFixed(2)} / D: ${analysis.stoch?.d?.toFixed(2)}
-💡 Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}
-🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}
-📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}
-🎯 **SL**: ${sltp.sl} | **TP**: ${sltp.tp}`;
+async function sendDiscordAlert(analysis, levels) {
+  const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
+  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
-// Cron toutes les minutes
+// 🕐 Analyse toutes les 1 minute
 cron.schedule('* * * * *', async () => {
   try {
     const candles = await fetchForexData();
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
-    const sltp = calculateSLTP(analysis.price, candles, analysis.signal);
-
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
 
     if (analysis.signal !== 'WAIT' && analysis.signal !== lastSignal) {
-      await sendDiscordAlert(analysis, levels, sltp);
+      await sendDiscordAlert(analysis, levels);
       lastSignal = analysis.signal;
     }
   } catch (err) {
@@ -159,15 +136,15 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-// Heartbeat toutes les 30 min
+// 💓 Heartbeat toutes les 30 minutes
 cron.schedule('*/30 * * * *', async () => {
   await axios.post(WEBHOOK_URL, {
-    content: `✅ Heartbeat: ZenScalp tourne toujours (${new Date().toLocaleTimeString()})`
+    content: `✅ Heartbeat: ZenScalp actif à ${new Date().toLocaleTimeString()}`
   });
 });
 
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend actif avec SL/TP 🚀');
+  res.send('ZenScalp backend agressif et intelligent 🚀');
 });
 
 app.listen(PORT, () => {
