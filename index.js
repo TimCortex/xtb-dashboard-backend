@@ -6,6 +6,7 @@ const technicalIndicators = require('technicalindicators');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
+console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
 
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
