@@ -96,29 +96,28 @@ function analyze(data) {
     ichimoku
   };
 
-  let count = 0;
-  if (latest.rsi14 > 50) count++;
-  if (latest.macd?.histogram > 0) count++;
-  if (latest.stoch?.k > latest.stoch?.d) count++;
-  if (latest.sar < latest.price) count++;
-  if (latest.ichimoku?.conversion > latest.ichimoku?.base) count++;
+  let bullCount = 0, bearCount = 0;
+  if (latest.rsi14 > 50) bullCount++; else if (latest.rsi14 < 50) bearCount++;
+  if (latest.macd?.histogram > 0) bullCount++; else if (latest.macd?.histogram < 0) bearCount++;
+  if (latest.stoch?.k > latest.stoch?.d) bullCount++; else if (latest.stoch?.k < latest.stoch?.d) bearCount++;
+  if (latest.sar < latest.price) bullCount++; else if (latest.sar > latest.price) bearCount++;
+  if (latest.ichimoku?.conversion > latest.ichimoku?.base) bullCount++; else if (latest.ichimoku?.conversion < latest.ichimoku?.base) bearCount++;
 
   let signal = 'WAIT';
-  if (count >= 5) signal = 'STRONG BUY';
-  else if (count >= 3) signal = 'GOOD BUY';
-  else if (count >= 1) signal = 'BUY';
+  if (bullCount >= 5) signal = 'STRONG BUY';
+  else if (bullCount >= 3) signal = 'GOOD BUY';
+  else if (bullCount >= 1) signal = 'BUY';
+  else if (bearCount >= 5) signal = 'STRONG SELL';
+  else if (bearCount >= 3) signal = 'GOOD SELL';
+  else if (bearCount >= 1) signal = 'SELL';
 
   let trend = 'INDÉTERMINÉE';
   if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
   else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
 
-  return {
-    ...latest,
-    signal,
-    trend,
-    message: `📈 ${signal} en tendance ${trend}`
+  message: `📈 ${signal} en tendance ${trend}`
   };
-}
+
 
 async function sendDiscordAlert(analysis, levels) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
