@@ -12,13 +12,15 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 
 let lastSignal = 'WAIT';
 
+// 📥 Récupérer 100 dernières bougies
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
-  return data.results.reverse(); // oldest first
+  return data.results.reverse();
 }
 
+// 📌 Support / résistance
 function detectLevels(data) {
   const prices = data.map(d => d.c);
   const supports = [], resistances = [];
@@ -34,25 +36,16 @@ function detectLevels(data) {
   };
 }
 
+// ☁️ Ichimoku simplifié
 function calculateIchimoku(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-
-  const conversionPeriod = 9;
-  const basePeriod = 26;
-
-  const recentHighConv = Math.max(...high.slice(-conversionPeriod));
-  const recentLowConv = Math.min(...low.slice(-conversionPeriod));
-  const conversion = (recentHighConv + recentLowConv) / 2;
-
-  const recentHighBase = Math.max(...high.slice(-basePeriod));
-  const recentLowBase = Math.min(...low.slice(-basePeriod));
-  const base = (recentHighBase + recentLowBase) / 2;
-
+  const conversion = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
+  const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
   return { conversion, base };
 }
 
-
+// 🔍 Analyse
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -87,8 +80,8 @@ function analyze(data) {
     ichimoku
   };
 
-  // STRONG signal logique
   let signal = 'WAIT';
+
   const bullish =
     latest.ema9 > latest.ema21 &&
     latest.rsi14 > 50 &&
@@ -105,32 +98,27 @@ function analyze(data) {
     latest.sar > latest.price &&
     latest.ichimoku.conversion < latest.ichimoku.base;
 
-  if (bullish) {
-    signal = 'STRONG BUY';
-  } else if (latest.ema9 > latest.ema21 && latest.stoch.k > latest.stoch.d) {
-    signal = 'BUY';
-  } else if (bearish) {
-    signal = 'STRONG SELL';
-  } else if (latest.ema9 < latest.ema21 && latest.stoch.k < latest.stoch.d) {
-    signal = 'SELL';
-  }
+  if (bullish) signal = 'STRONG BUY';
+  else if (latest.ema9 > latest.ema21 && latest.stoch.k > latest.stoch.d) signal = 'BUY';
+  else if (bearish) signal = 'STRONG SELL';
+  else if (latest.ema9 < latest.ema21 && latest.stoch.k < latest.stoch.d) signal = 'SELL';
 
   return { ...latest, signal };
 }
 
+// 🔔 Discord alert
 async function sendDiscordAlert(analysis, levels) {
-  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n🎯 Stoch K: ${analysis.stoch?.k?.toFixed(2)}, D: ${analysis.stoch?.d?.toFixed(2)}\n💡 Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
+  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n🎯 Stoch K: ${analysis.stoch?.k?.toFixed(2)}, D: ${analysis.stoch?.d?.toFixed(2)}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
-// Analyse toutes les 1 min
+// 🧠 Cron chaque minute
 cron.schedule('* * * * *', async () => {
   try {
     const candles = await fetchForexData();
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
-
     if (analysis.signal !== 'WAIT' && analysis.signal !== lastSignal) {
       await sendDiscordAlert(analysis, levels);
       lastSignal = analysis.signal;
@@ -140,13 +128,14 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-// Heartbeat
+// 🔁 Heartbeat toutes les 30 minutes
 cron.schedule('*/30 * * * *', async () => {
   await axios.post(WEBHOOK_URL, {
     content: `✅ Heartbeat: ZenScalp tourne toujours (${new Date().toLocaleTimeString()})`
   });
 });
 
+// 🌐 Route test
 app.get('/', (req, res) => {
   res.send('ZenScalp backend agressif prêt 🧠🚀');
 });
