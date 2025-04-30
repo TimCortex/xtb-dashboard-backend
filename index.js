@@ -50,13 +50,14 @@ function calculateIchimoku(data) {
 
 function computeSLTP(price, signal, levels) {
   let sl, tp;
+
   if (levels.support.length && levels.resistance.length) {
     if (signal.includes('BUY')) {
-      sl = levels.support[0];
-      tp = levels.resistance[0];
+      sl = levels.support.find(s => s < price) ?? price - price * 0.001;
+      tp = levels.resistance.find(r => r > price) ?? price + price * 0.002;
     } else {
-      sl = levels.resistance[0];
-      tp = levels.support[0];
+      sl = levels.resistance.find(r => r > price) ?? price + price * 0.001;
+      tp = levels.support.find(s => s < price) ?? price - price * 0.002;
     }
   } else {
     const percentSL = price * 0.001;
@@ -64,8 +65,10 @@ function computeSLTP(price, signal, levels) {
     sl = signal.includes('BUY') ? price - percentSL : price + percentSL;
     tp = signal.includes('BUY') ? price + percentTP : price - percentTP;
   }
+
   return { sl: sl.toFixed(5), tp: tp.toFixed(5) };
 }
+
 
 function analyze(data) {
   const close = data.map(c => c.c);
