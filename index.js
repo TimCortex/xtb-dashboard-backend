@@ -12,15 +12,13 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 
 let lastSignal = 'WAIT';
 
-// 📈 Récupérer les bougies 5 min du jour actuel
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${today}/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
   return data.results.reverse();
 }
 
-// 📊 Détection des niveaux S/R simples
 function detectLevels(data) {
   const prices = data.map(d => d.c);
   const supports = [], resistances = [];
@@ -36,10 +34,10 @@ function detectLevels(data) {
   };
 }
 
-// 📐 Calcul Ichimoku (Tenkan / Kijun)
 function calculateIchimoku(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
+
   const conversionPeriod = 9;
   const basePeriod = 26;
 
@@ -54,7 +52,6 @@ function calculateIchimoku(data) {
   return { conversion, base };
 }
 
-// 🔍 Analyse technique
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -74,7 +71,6 @@ function analyze(data) {
   const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 14, signalPeriod: 3 });
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const bb = technicalIndicators.BollingerBands.calculate({ values: close, period: 20, stdDev: 2 });
-
   const ichimoku = calculateIchimoku(data);
 
   const latest = {
@@ -89,44 +85,32 @@ function analyze(data) {
     ichimoku
   };
 
-  // 🧠 Logique de signal intelligente
+  // Compter conditions haussières et baissières
+  let bullish = 0, bearish = 0;
+  if (latest.ema9 > latest.ema21) bullish++; else bearish++;
+  if (latest.rsi14 > 55) bullish++; else if (latest.rsi14 < 45) bearish++;
+  if (latest.macd?.histogram > 0) bullish++; else if (latest.macd?.histogram < 0) bearish++;
+  if (latest.stoch?.k > latest.stoch?.d) bullish++; else if (latest.stoch?.k < latest.stoch?.d) bearish++;
+  if (latest.sar < latest.price) bullish++; else if (latest.sar > latest.price) bearish++;
+  if (latest.ichimoku.conversion > latest.ichimoku.base) bullish++; else bearish++;
+
   let signal = 'WAIT';
-  const bullish =
-    latest.ema9 > latest.ema21 &&
-    latest.rsi14 > 50 &&
-    latest.macd.histogram > 0 &&
-    latest.stoch.k > latest.stoch.d &&
-    latest.sar < latest.price &&
-    latest.ichimoku.conversion > latest.ichimoku.base;
-
-  const bearish =
-    latest.ema9 < latest.ema21 &&
-    latest.rsi14 < 50 &&
-    latest.macd.histogram < 0 &&
-    latest.stoch.k < latest.stoch.d &&
-    latest.sar > latest.price &&
-    latest.ichimoku.conversion < latest.ichimoku.base;
-
-  if (bullish) {
-    signal = 'STRONG BUY';
-  } else if (latest.ema9 > latest.ema21 && latest.stoch.k > latest.stoch.d) {
-    signal = 'BUY';
-  } else if (bearish) {
-    signal = 'STRONG SELL';
-  } else if (latest.ema9 < latest.ema21 && latest.stoch.k < latest.stoch.d) {
-    signal = 'SELL';
-  }
+  if (bullish >= 3) signal = 'STRONG BUY';
+  else if (bullish === 2) signal = 'GOOD BUY';
+  else if (bullish === 1) signal = 'BUY';
+  else if (bearish >= 3) signal = 'STRONG SELL';
+  else if (bearish === 2) signal = 'GOOD SELL';
+  else if (bearish === 1) signal = 'SELL';
 
   return { ...latest, signal };
 }
 
-// 📤 Envoi vers Discord
 async function sendDiscordAlert(analysis, levels) {
-  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n💡 Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
+  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n🎯 Stoch K: ${analysis.stoch?.k?.toFixed(2)}, D: ${analysis.stoch?.d?.toFixed(2)}\n💡 Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
-// ⏱️ Cron toutes les 1 min
+// Cron chaque minute
 cron.schedule('* * * * *', async () => {
   try {
     const candles = await fetchForexData();
@@ -143,16 +127,15 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-// 💓 Heartbeat toutes les 30 min
+// Heartbeat toutes les 30 min
 cron.schedule('*/30 * * * *', async () => {
   await axios.post(WEBHOOK_URL, {
     content: `✅ Heartbeat: ZenScalp tourne toujours (${new Date().toLocaleTimeString()})`
   });
 });
 
-// 🌍 Route de test
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend agressif prêt 🧠🚀');
+  res.send('ZenScalp backend ultra-réactif avec catégorie de signaux 🧠🚀');
 });
 
 app.listen(PORT, () => {
