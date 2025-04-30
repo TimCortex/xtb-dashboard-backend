@@ -1,8 +1,7 @@
-
 const express = require('express');
 const axios = require('axios');
-const technicalIndicators = require('technicalindicators');
 const cron = require('node-cron');
+const technicalIndicators = require('technicalindicators');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,19 +12,41 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 
 let lastSignal = 'WAIT';
 
+// 📈 Récupérer 100 bougies 5 minutes
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/${today}/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
-  return data.results.reverse();
+  return data.results.reverse(); // plus ancien -> plus récent
 }
 
+// 📊 Détection de supports / résistances
+function detectLevels(data) {
+  const prices = data.map(d => d.c);
+  const supports = [], resistances = [];
+
+  for (let i = 2; i < prices.length - 2; i++) {
+    const prev = prices[i - 1], curr = prices[i], next = prices[i + 1];
+
+    // support : creux local
+    if (curr < prev && curr < next) supports.push(curr);
+
+    // résistance : sommet local
+    if (curr > prev && curr > next) resistances.push(curr);
+  }
+
+  return {
+    support: supports.length ? supports.sort((a, b) => b - a).slice(-2) : [],
+    resistance: resistances.length ? resistances.sort((a, b) => b - a).slice(0, 2) : []
+  };
+}
+
+// 📉 Analyse technique
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
 
-  const sma20 = technicalIndicators.SMA.calculate({ period: 20, values: close });
   const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
   const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
   const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: close });
@@ -38,9 +59,7 @@ function analyze(data) {
     SimpleMASignal: false
   });
   const stoch = technicalIndicators.Stochastic.calculate({
-    high,
-    low,
-    close,
+    high, low, close,
     period: 14,
     signalPeriod: 3
   });
@@ -55,48 +74,33 @@ function analyze(data) {
   };
 
   let signal = 'WAIT';
-  if (
-    latest.ema9 > latest.ema21 &&
-    latest.rsi14 > 45 &&
-    latest.macd.histogram > 0.0001 &&
-    latest.stoch.k > latest.stoch.d
-  ) {
+  if (latest.ema9 > latest.ema21 && latest.rsi14 > 48 && latest.macd.histogram > 0 && latest.stoch.k > latest.stoch.d) {
     signal = 'BUY';
-  } else if (
-    latest.ema9 < latest.ema21 &&
-    latest.rsi14 < 55 &&
-    latest.macd.histogram < -0.0001 &&
-    latest.stoch.k < latest.stoch.d
-  ) {
+  } else if (latest.ema9 < latest.ema21 && latest.rsi14 < 52 && latest.macd.histogram < 0 && latest.stoch.k < latest.stoch.d) {
     signal = 'SELL';
   }
 
   return { ...latest, signal };
 }
 
-async function sendDiscordAlert(analysis) {
+// 📤 Envoi du message Discord
+async function sendDiscordAlert(analysis, levels) {
   const message = {
-    content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}`
+    content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}\n🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`
   };
   await axios.post(WEBHOOK_URL, message);
 }
 
-// Fonction pour envoyer un heartbeat
-async function sendHeartbeat() {
-  const message = {
-    content: '🫀 **ZenScalp est actif** — Système OK ✅'
-  };
-  await axios.post(WEBHOOK_URL, message);
-}
-
-cron.schedule('*/2 * * * *', async () => {
+// ⏱ Cron job toutes les 2 minutes
+cron.schedule('*/1 * * * *', async () => {
   try {
     const candles = await fetchForexData();
+    const levels = detectLevels(candles);
     const analysis = analyze(candles);
-    console.log(`[${new Date().toLocaleTimeString()}] Signal: ${analysis.signal}`);
+    console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
 
     if (analysis.signal !== 'WAIT' && analysis.signal !== lastSignal) {
-      await sendDiscordAlert(analysis);
+      await sendDiscordAlert(analysis, levels);
       lastSignal = analysis.signal;
     }
   } catch (err) {
@@ -104,16 +108,14 @@ cron.schedule('*/2 * * * *', async () => {
   }
 });
 
-// Cron Heartbeat toutes les 30 minutes
+// 💓 Heartbeat toutes les 30 minutes
 cron.schedule('*/30 * * * *', async () => {
-  try {
-    await sendHeartbeat();
-    console.log('🫀 Heartbeat envoyé');
-  } catch (err) {
-    console.error('Erreur Heartbeat:', err.message);
-  }
+  await axios.post(WEBHOOK_URL, {
+    content: `✅ Heartbeat: ZenScalp tourne toujours (${new Date().toLocaleTimeString()})`
+  });
 });
 
+// 🌐 Route test
 app.get('/', (req, res) => {
   res.send('ZenScalp backend actif 🚀');
 });
