@@ -101,15 +101,9 @@ function analyze(data) {
   if (latest.ichimoku?.conversion > latest.ichimoku?.base) count++;
 
   let signal = 'WAIT';
-  if (isBuy) {
-    if (count >= 5) signal = 'STRONG BUY';
-    else if (count >= 3) signal = 'GOOD BUY';
-    else if (count >= 1) signal = 'BUY';
-  } else if (isSell) {
-    if (count >= 5) signal = 'STRONG SELL';
-    else if (count >= 3) signal = 'GOOD SELL';
-    else if (count >= 1) signal = 'SELL';
-  }
+  if (count >= 5) signal = isBuy ? 'STRONG BUY' : isSell ? 'STRONG SELL' : 'WAIT';
+  else if (count >= 3) signal = isBuy ? 'GOOD BUY' : isSell ? 'GOOD SELL' : 'WAIT';
+  else if (count >= 1) signal = isBuy ? 'BUY' : isSell ? 'SELL' : 'WAIT';
 
   return { ...latest, signal };
 }
