@@ -37,14 +37,21 @@ function detectLevels(data) {
 function calculateIchimoku(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-  const close = data.map(c => c.c);
 
-  const conversionLinePeriod = 9;
-  const baseLinePeriod = 26;
+  const conversionPeriod = 9;
+  const basePeriod = 26;
 
-  const conversion = technicalIndicators.ICHIMOKU.calculate({ high, low, conversionPeriod: conversionLinePeriod, basePeriod: baseLinePeriod });
-  return conversion.at(-1); // { conversion, base, spanA, spanB }
+  const recentHighConv = Math.max(...high.slice(-conversionPeriod));
+  const recentLowConv = Math.min(...low.slice(-conversionPeriod));
+  const conversion = (recentHighConv + recentLowConv) / 2;
+
+  const recentHighBase = Math.max(...high.slice(-basePeriod));
+  const recentLowBase = Math.min(...low.slice(-basePeriod));
+  const base = (recentHighBase + recentLowBase) / 2;
+
+  return { conversion, base };
 }
+
 
 function analyze(data) {
   const close = data.map(c => c.c);
