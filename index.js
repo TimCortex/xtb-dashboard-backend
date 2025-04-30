@@ -115,13 +115,17 @@ function analyze(data) {
   if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
   else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
 
-  message: `📈 ${signal} en tendance ${trend}`
+  message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
   };
-
+}
+}
+}
+}
 
 async function sendDiscordAlert(analysis, levels) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
-  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2) ?? 'N/A'}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5) ?? 'N/A'}\n🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2) ?? 'N/A'}, D ${analysis.stoch?.d?.toFixed(2) ?? 'N/A'}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
+  const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**
+💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2) ?? 'N/A'}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5) ?? 'N/A'}\n🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2) ?? 'N/A'}, D ${analysis.stoch?.d?.toFixed(2) ?? 'N/A'}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
@@ -158,8 +162,9 @@ const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
 
 function appendToCSV(analysis) {
-  const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend';
-  const line = `${analysis.timestamp},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}
+  const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend
+';
+  const line = `${analysis.timestamp || new Date().toISOString()},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}
 `;
   if (!fs.existsSync(csvPath)) fs.writeFileSync(csvPath, header);
   fs.appendFileSync(csvPath, line);
