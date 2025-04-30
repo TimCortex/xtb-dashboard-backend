@@ -56,8 +56,8 @@ function computeSLTP(price, signal, levels) {
       tp = levels.support[0];
     }
   } else {
-    const percentSL = signal.includes('BUY') ? price * 0.001 : price * 0.001;
-    const percentTP = signal.includes('BUY') ? price * 0.002 : price * 0.002;
+    const percentSL = price * 0.001;
+    const percentTP = price * 0.002;
     sl = signal.includes('BUY') ? price - percentSL : price + percentSL;
     tp = signal.includes('BUY') ? price + percentTP : price - percentTP;
   }
@@ -83,21 +83,20 @@ function analyze(data) {
     ema9: ema9.at(-1),
     ema21: ema21.at(-1),
     rsi14: rsi14.at(-1),
-    macd: macd.at(-1),
-    stoch: stoch.at(-1),
-    sar: sar.at(-1),
+    macd: macd.length ? macd.at(-1) : { histogram: 0 },
+    stoch: stoch.length ? stoch.at(-1) : { k: 0, d: 0 },
+    sar: sar.length ? sar.at(-1) : close.at(-1),
     ichimoku
   };
 
-  // Compter conditions remplies
   let count = 0;
   const isBuy = latest.ema9 > latest.ema21;
   const isSell = latest.ema9 < latest.ema21;
   if (latest.rsi14 > 50) count++;
-  if (latest.macd.histogram > 0) count++;
-  if (latest.stoch.k > latest.stoch.d) count++;
+  if (latest.macd?.histogram > 0) count++;
+  if (latest.stoch?.k > latest.stoch?.d) count++;
   if (latest.sar < latest.price) count++;
-  if (latest.ichimoku.conversion > latest.ichimoku.base) count++;
+  if (latest.ichimoku?.conversion > latest.ichimoku?.base) count++;
 
   let signal = 'WAIT';
   if (isBuy) {
@@ -115,11 +114,10 @@ function analyze(data) {
 
 async function sendDiscordAlert(analysis, levels) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
-  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
+  const msg = `📊 **${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2) ?? 'N/A'}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5) ?? 'N/A'}\n🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2) ?? 'N/A'}, D ${analysis.stoch?.d?.toFixed(2) ?? 'N/A'}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
-// 🕐 Analyse toutes les 1 minute
 cron.schedule('* * * * *', async () => {
   try {
     const candles = await fetchForexData();
@@ -136,7 +134,6 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-// 💓 Heartbeat toutes les 30 minutes
 cron.schedule('*/30 * * * *', async () => {
   await axios.post(WEBHOOK_URL, {
     content: `✅ Heartbeat: ZenScalp actif à ${new Date().toLocaleTimeString()}`
