@@ -12,15 +12,15 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 
 let lastSignal = 'WAIT';
 
-// 📈 Récupérer 100 bougies 5 minutes
+// 📈 Récupération des données 5 minutes
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
-  return data.results.reverse(); // plus ancien -> plus récent
+  return data.results.reverse(); // du plus ancien au plus récent
 }
 
-// 📊 Détection de supports / résistances
+// 📊 Détection de niveaux clés
 function detectLevels(data) {
   const prices = data.map(d => d.c);
   const supports = [], resistances = [];
@@ -28,10 +28,7 @@ function detectLevels(data) {
   for (let i = 2; i < prices.length - 2; i++) {
     const prev = prices[i - 1], curr = prices[i], next = prices[i + 1];
 
-    // support : creux local
     if (curr < prev && curr < next) supports.push(curr);
-
-    // résistance : sommet local
     if (curr > prev && curr > next) resistances.push(curr);
   }
 
@@ -41,7 +38,7 @@ function detectLevels(data) {
   };
 }
 
-// 📉 Analyse technique
+// 📉 Analyse technique avec logique agressive
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -73,17 +70,24 @@ function analyze(data) {
     stoch: stoch.at(-1)
   };
 
-  let signal = 'WAIT';
-  if (latest.ema9 > latest.ema21 && latest.rsi14 > 48 && latest.macd.histogram > 0 && latest.stoch.k > latest.stoch.d) {
-    signal = 'BUY';
-  } else if (latest.ema9 < latest.ema21 && latest.rsi14 < 52 && latest.macd.histogram < 0 && latest.stoch.k < latest.stoch.d) {
-    signal = 'SELL';
+  // 🧠 Nouvelle logique de signaux
+  if (latest.ema9 > latest.ema21 && latest.rsi14 > 55 && latest.macd.histogram > 0.0001 && latest.stoch.k > latest.stoch.d + 2) {
+    return { ...latest, signal: 'STRONG BUY' };
+  }
+  if (latest.ema9 > latest.ema21 && latest.rsi14 > 50 && latest.macd.histogram > 0 && latest.stoch.k > latest.stoch.d) {
+    return { ...latest, signal: 'BUY' };
+  }
+  if (latest.ema9 < latest.ema21 && latest.rsi14 < 45 && latest.macd.histogram < -0.0001 && latest.stoch.k < latest.stoch.d - 2) {
+    return { ...latest, signal: 'STRONG SELL' };
+  }
+  if (latest.ema9 < latest.ema21 && latest.rsi14 < 50 && latest.macd.histogram < 0 && latest.stoch.k < latest.stoch.d) {
+    return { ...latest, signal: 'SELL' };
   }
 
-  return { ...latest, signal };
+  return { ...latest, signal: 'WAIT' };
 }
 
-// 📤 Envoi du message Discord
+// 📤 Envoi Discord
 async function sendDiscordAlert(analysis, levels) {
   const message = {
     content: `📊 **Signal détecté: ${analysis.signal}**\n💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14.toFixed(2)}\n📉 MACD: ${analysis.macd.histogram.toFixed(5)}\n🎯 Stochastique: K ${analysis.stoch.k.toFixed(2)}, D ${analysis.stoch.d.toFixed(2)}\n🛑 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📌 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`
@@ -91,7 +95,7 @@ async function sendDiscordAlert(analysis, levels) {
   await axios.post(WEBHOOK_URL, message);
 }
 
-// ⏱ Cron job toutes les 2 minutes
+// 🔁 Cron toutes les minutes
 cron.schedule('*/1 * * * *', async () => {
   try {
     const candles = await fetchForexData();
@@ -115,7 +119,7 @@ cron.schedule('*/30 * * * *', async () => {
   });
 });
 
-// 🌐 Route test
+// 🌐 Route principale
 app.get('/', (req, res) => {
   res.send('ZenScalp backend actif 🚀');
 });
