@@ -5,6 +5,7 @@ const technicalIndicators = require('technicalindicators');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
 
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
@@ -125,7 +126,10 @@ cron.schedule('* * * * *', async () => {
     const analysis = analyze(candles);
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
 
-    if (analysis.signal !== 'WAIT' && analysis.signal !== lastSignal) {
+    if (
+      (!MODE_PERSISTANT && analysis.signal !== 'WAIT') ||
+      (MODE_PERSISTANT && analysis.signal !== lastSignal)
+    ) {
       await sendDiscordAlert(analysis, levels);
       lastSignal = analysis.signal;
     }
