@@ -116,8 +116,13 @@ function analyze(data) {
   if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
   else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
 
-  message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
+  return {
+    ...latest,
+    signal,
+    trend,
+    message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
   };
+}
 
 
 async function sendDiscordAlert(analysis, levels) {
