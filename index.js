@@ -117,10 +117,7 @@ function analyze(data) {
 
   message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
   };
-}
-}
-}
-}
+
 
 async function sendDiscordAlert(analysis, levels) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
@@ -162,8 +159,7 @@ const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
 
 function appendToCSV(analysis) {
-  const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend
-';
+  const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend';
   const line = `${analysis.timestamp || new Date().toISOString()},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}
 `;
   if (!fs.existsSync(csvPath)) fs.writeFileSync(csvPath, header);
