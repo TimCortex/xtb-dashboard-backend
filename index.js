@@ -73,6 +73,8 @@ function analyze(data) {
 
   const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
   const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
+  const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
+  const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
   const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: close });
   const macd = technicalIndicators.MACD.calculate({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
   const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 14, signalPeriod: 3 });
@@ -81,9 +83,12 @@ function analyze(data) {
   const ichimoku = calculateIchimoku(data);
 
   const latest = {
+    timestamp: new Date().toISOString(),
     price: close.at(-1),
     ema9: ema9.at(-1),
     ema21: ema21.at(-1),
+    ema50: ema50.at(-1),
+    ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
     macd: macd.length ? macd.at(-1) : { histogram: 0 },
     stoch: stoch.length ? stoch.at(-1) : { k: 0, d: 0 },
@@ -92,8 +97,6 @@ function analyze(data) {
   };
 
   let count = 0;
-  const isBuy = latest.ema9 > latest.ema21;
-  const isSell = latest.ema9 < latest.ema21;
   if (latest.rsi14 > 50) count++;
   if (latest.macd?.histogram > 0) count++;
   if (latest.stoch?.k > latest.stoch?.d) count++;
@@ -105,7 +108,12 @@ function analyze(data) {
   else if (count >= 3) signal = 'GOOD BUY';
   else if (count >= 1) signal = 'BUY';
 
-  return { ...latest, signal };
+  let trend = 'INDÉTERMINÉE';
+  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
+  else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+
+  return { ...latest, signal, trend, message: `📈 ${signal} en tendance ${trend}` };
+}
 }
 
 async function sendDiscordAlert(analysis, levels) {
@@ -120,7 +128,8 @@ cron.schedule('* * * * *', async () => {
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
     lastAnalysis = analysis;
-    console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal}`);
+    appendToCSV(analysis);
+    console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
     if (
       (!MODE_PERSISTANT && analysis.signal !== 'WAIT') ||
@@ -140,7 +149,19 @@ cron.schedule('*/30 * * * *', async () => {
   });
 });
 
+const fs = require('fs');
+const path = require('path');
+const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
+
+function appendToCSV(analysis) {
+  const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend
+';
+  const line = `${analysis.timestamp},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}
+`;
+  if (!fs.existsSync(csvPath)) fs.writeFileSync(csvPath, header);
+  fs.appendFileSync(csvPath, line);
+}
 
 app.get('/indicateurs', (req, res) => {
   if (!lastAnalysis) return res.status(404).json({ error: 'Aucune analyse encore disponible.' });
