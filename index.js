@@ -2,6 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
 const technicalIndicators = require('technicalindicators');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,11 +11,39 @@ const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
 console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
 
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
+const EODHD_API_KEY = '6814bfd198f049.40358032';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
 let lastSignal = 'WAIT';
 let lastNotificationSignal = null;
+let suspendedUntil = null;
+
+async function fetchEconomicEvents() {
+  const today = new Date().toISOString().split('T')[0];
+  const url = `https://eodhd.com/api/economic-events?api_token=${EODHD_API_KEY}&from=${today}&to=${today}&country=US,EU&importance=2,3`; // Only high/medium importance
+  try {
+    const { data } = await axios.get(url);
+    return data.filter(e => e.date && e.date.includes(today));
+  } catch (err) {
+    console.warn('⚠️ Impossible de récupérer les événements économiques :', err.message);
+    return [];
+  }
+}
+
+function shouldSuspendNotifications(events) {
+  const now = new Date();
+  for (const event of events) {
+    const eventTime = new Date(event.date);
+    const windowStart = new Date(eventTime.getTime() - 15 * 60000);
+    const windowEnd = new Date(eventTime.getTime() + 30 * 60000);
+    if (now >= windowStart && now <= windowEnd) {
+      suspendedUntil = windowEnd;
+      return `⏸️ Suspension des alertes jusqu'à ${windowEnd.toLocaleTimeString()} (événement : ${event.event})`;
+    }
+  }
+  return null;
+}
 
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
@@ -179,6 +209,18 @@ ${warning}${breakoutMsg ? `\n${breakoutMsg}` : ''}`;
 
 cron.schedule('* * * * *', async () => {
   try {
+    const events = await fetchEconomicEvents();
+    const suspensionMsg = shouldSuspendNotifications(events);
+    if (suspensionMsg) {
+      await axios.post(WEBHOOK_URL, { content: suspensionMsg });
+      return;
+    }
+
+    if (suspendedUntil && new Date() < suspendedUntil) {
+      console.log('⏳ Notifications suspendues temporairement');
+      return;
+    }
+
     const candles = await fetchForexData();
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
@@ -203,6 +245,7 @@ cron.schedule('* * * * *', async () => {
     console.error('Erreur Cron:', err.message);
   }
 });
+
 
 const fs = require('fs');
 const path = require('path');
