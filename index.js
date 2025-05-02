@@ -12,7 +12,7 @@ const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
 console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
 
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
-const FMP_API_KEY = '6814bfd198f049.40358032';
+const FMP_API_KEY = 'Zrtua3jx9BV8HpOsgFc9ESQT1bbNP0rd';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
