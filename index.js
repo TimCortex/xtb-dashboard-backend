@@ -82,6 +82,8 @@ function generateWarning(price, signal, levels) {
 }
 
 
+
+
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -146,9 +148,33 @@ if (latest.ema50 && latest.ema100) {
 }
 
 
-async function sendDiscordAlert(analysis, levels) {
+function detectBreakout(data, levels) {
+  const last = data.at(-1);
+  const prev = data.at(-2);
+  let breakout = null;
+
+  const brokenResistance = levels.resistance.find(r =>
+    prev.c < r && last.c > r
+  );
+  if (brokenResistance) {
+    breakout = `💥 Cassure confirmée de la résistance à ${brokenResistance.toFixed(5)}`;
+  }
+
+  const brokenSupport = levels.support.find(s =>
+    prev.c > s && last.c < s
+  );
+  if (brokenSupport) {
+    breakout = `⚠️ Cassure confirmée du support à ${brokenSupport.toFixed(5)}`;
+  }
+
+  return breakout;
+}
+
+async function sendDiscordAlert(analysis, levels, data) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
   const warning = generateWarning(analysis.price, analysis.signal, levels);
+  const breakoutMsg = detectBreakout(data, levels);
+
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**
 💰 Prix: ${analysis.price}
 📈 RSI: ${analysis.rsi14?.toFixed(2) ?? 'N/A'}
@@ -158,7 +184,9 @@ async function sendDiscordAlert(analysis, levels) {
 🛑 SL: ${sl} | 🎯 TP: ${tp}
 📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}
 📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}
-${warning}`;
+${warning}
+${breakoutMsg ? `\n${breakoutMsg}` : ''}`;
+
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
@@ -175,18 +203,12 @@ cron.schedule('* * * * *', async () => {
       (!MODE_PERSISTANT && analysis.signal !== 'WAIT') ||
       (MODE_PERSISTANT && analysis.signal !== lastSignal)
     ) {
-      await sendDiscordAlert(analysis, levels);
+      await sendDiscordAlert(analysis, levels, candles); // ← ici on ajoute `candles`
       lastSignal = analysis.signal;
     }
   } catch (err) {
     console.error('Erreur Cron:', err.message);
   }
-});
-
-cron.schedule('*/30 * * * *', async () => {
-  await axios.post(WEBHOOK_URL, {
-    content: `✅ Heartbeat: ZenScalp actif à ${new Date().toLocaleTimeString()}`
-  });
 });
 
 const fs = require('fs');
