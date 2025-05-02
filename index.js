@@ -1,4 +1,4 @@
-// ZenScalp - Script complet avec TRADE TOXIQUE + Re-entry + MACD protégé + OHLC élargi
+// ZenScalp - avec TRADE TOXIQUE calculé en pips
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -16,6 +16,10 @@ const FMP_API_KEY = 'Zrtua3jx9BV8HpOsgFc9ESQT1bbNP0rd';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
+const LOT_SIZE = 0.3;
+const PIP_VALUE_EURUSD = 9.0 * LOT_SIZE; // ≈ 2.7 € par pip pour 0.3 lot
+const PIP_ALERT_THRESHOLD = 10; // seuil de pips perdus pour signal toxique
+
 let lastSignal = 'WAIT';
 let lastNotificationSignal = null;
 let suspendNotificationsUntil = null;
@@ -26,7 +30,6 @@ let lastPrice = 0;
 let lastToxicExitTime = null;
 let lastExitPrice = null;
 const MAX_TRADE_DURATION_MIN = 20;
-const MAX_DRAWDOWN_EUR = -10;
 
 function canReenter(analysis) {
   const now = Date.now();
@@ -45,10 +48,12 @@ async function sendReentryAlert(analysis) {
 function monitorToxicTrade(analysis) {
   if (!tradeOpenTime) tradeOpenTime = Date.now();
   const minutesOpen = (Date.now() - tradeOpenTime) / 60000;
-  const drawdown = analysis.price - lastPrice;
-  let toxicConditions = 0;
+  const priceDiff = analysis.price - lastPrice;
+  const pipsLost = Math.abs(priceDiff) / 0.0001;
+  const eurosLost = pipsLost * PIP_VALUE_EURUSD;
 
-  if (drawdown < MAX_DRAWDOWN_EUR) toxicConditions++;
+  let toxicConditions = 0;
+  if (pipsLost >= PIP_ALERT_THRESHOLD) toxicConditions++;
   if (minutesOpen >= MAX_TRADE_DURATION_MIN) toxicConditions++;
   if (analysis.signal === 'GOOD BUY') toxicConditions++;
 
@@ -56,7 +61,7 @@ function monitorToxicTrade(analysis) {
     toxicAlertSent = true;
     lastToxicExitTime = Date.now();
     lastExitPrice = analysis.price;
-    const alert = `💀 TRADE TOXIQUE DÉTECTÉ 💀\nSignal: ${analysis.signal}\nDurée: ${minutesOpen.toFixed(1)} min\nPerte latente approx.: ${drawdown.toFixed(2)} €\n➡️ SORS !`;
+    const alert = `💀 TRADE TOXIQUE DÉTECTÉ 💀\nSignal: ${analysis.signal}\nDurée: ${minutesOpen.toFixed(1)} min\nPerte approx.: ${eurosLost.toFixed(2)} € (${pipsLost.toFixed(1)} pips)\n➡️ SORS !`;
     console.warn(alert);
     axios.post(WEBHOOK_URL, { content: alert });
   }
