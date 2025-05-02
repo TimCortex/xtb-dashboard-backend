@@ -116,15 +116,31 @@ function analyze(data) {
   else if (bearCount >= 1) signal = 'SELL';
 
   let trend = 'INDÉTERMINÉE';
-  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
-  else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) {
+  trend = 'HAUSSIÈRE';
+} else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) {
+  trend = 'BAISSIÈRE';
+} else if (latest.ema50 > latest.ema100) {
+  trend = 'HAUSSIÈRE (modérée)';
+} else if (latest.ema50 < latest.ema100) {
+  trend = 'BAISSIÈRE (modérée)';
+}
 
-  return {
-    ...latest,
-    signal,
-    trend,
-    message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
-  };
+// ✅ Message clair avec emoji
+const emoji =
+  signal.includes('SELL') ? '📉' :
+  signal.includes('BUY') ? '📈' :
+  '⏸️';
+
+const message = `${emoji} ${signal} en tendance ${trend}`;
+
+// 🔁 Résultat final
+return {
+  ...latest,
+  signal,
+  trend,
+  message
+};
 }
 
 
