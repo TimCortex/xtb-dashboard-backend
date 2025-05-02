@@ -17,7 +17,7 @@ let lastSignal = 'WAIT';
 
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=150&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
   return data.results.reverse();
 }
@@ -116,8 +116,14 @@ function analyze(data) {
   else if (bearCount >= 1) signal = 'SELL';
 
   let trend = 'INDÉTERMINÉE';
-  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
-  else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+if (latest.ema50 && latest.ema100) {
+  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) {
+    trend = 'HAUSSIÈRE';
+  } else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) {
+    trend = 'BAISSIÈRE';
+  }
+}
+
 
   return {
     ...latest,
