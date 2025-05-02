@@ -248,7 +248,7 @@ cron.schedule('* * * * *', async () => {
 
 
 //const fs = require('fs');
-const path = require('path');
+//const path = require('path');
 const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
 
