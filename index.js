@@ -1,4 +1,3 @@
-
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -14,6 +13,7 @@ const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
 let lastSignal = 'WAIT';
+let lastNotificationSignal = null;
 
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
@@ -70,7 +70,7 @@ function computeSLTP(price, signal, levels) {
 }
 
 function generateWarning(price, signal, levels) {
-  const proximity = price * 0.0005; // ~5 pips
+  const proximity = price * 0.0005;
   if (signal.includes('BUY')) {
     const nearResistance = levels.resistance.find(r => Math.abs(r - price) <= proximity);
     if (nearResistance) return `⚠️ Risque de retournement : prix proche résistance (${nearResistance.toFixed(5)})`;
@@ -80,9 +80,6 @@ function generateWarning(price, signal, levels) {
   }
   return '';
 }
-
-
-
 
 function analyze(data) {
   const close = data.map(c => c.c);
@@ -130,14 +127,10 @@ function analyze(data) {
   else if (bearCount >= 1) signal = 'SELL';
 
   let trend = 'INDÉTERMINÉE';
-if (latest.ema50 && latest.ema100) {
-  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) {
-    trend = 'HAUSSIÈRE';
-  } else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) {
-    trend = 'BAISSIÈRE';
+  if (latest.ema50 && latest.ema100) {
+    if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
+    else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
   }
-}
-
 
   return {
     ...latest,
@@ -147,25 +140,16 @@ if (latest.ema50 && latest.ema100) {
   };
 }
 
-
 function detectBreakout(data, levels) {
   const last = data.at(-1);
   const prev = data.at(-2);
   let breakout = null;
 
-  const brokenResistance = levels.resistance.find(r =>
-    prev.c < r && last.c > r
-  );
-  if (brokenResistance) {
-    breakout = `💥 Cassure confirmée de la résistance à ${brokenResistance.toFixed(5)}`;
-  }
+  const brokenResistance = levels.resistance.find(r => prev.c < r && last.c > r);
+  if (brokenResistance) breakout = `💥 Cassure confirmée de la résistance à ${brokenResistance.toFixed(5)}`;
 
-  const brokenSupport = levels.support.find(s =>
-    prev.c > s && last.c < s
-  );
-  if (brokenSupport) {
-    breakout = `⚠️ Cassure confirmée du support à ${brokenSupport.toFixed(5)}`;
-  }
+  const brokenSupport = levels.support.find(s => prev.c > s && last.c < s);
+  if (brokenSupport) breakout = `⚠️ Cassure confirmée du support à ${brokenSupport.toFixed(5)}`;
 
   return breakout;
 }
@@ -184,8 +168,7 @@ async function sendDiscordAlert(analysis, levels, data) {
 🛑 SL: ${sl} | 🎯 TP: ${tp}
 📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}
 📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}
-${warning}
-${breakoutMsg ? `\n${breakoutMsg}` : ''}`;
+${warning}${breakoutMsg ? `\n${breakoutMsg}` : ''}`;
 
   await axios.post(WEBHOOK_URL, { content: msg });
 }
@@ -199,13 +182,19 @@ cron.schedule('* * * * *', async () => {
     appendToCSV(analysis);
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
-    if (
-      (!MODE_PERSISTANT && analysis.signal !== 'WAIT') ||
-      (MODE_PERSISTANT && analysis.signal !== lastSignal)
-    ) {
-      await sendDiscordAlert(analysis, levels, candles); // ← ici on ajoute `candles`
-      lastSignal = analysis.signal;
+    if (!MODE_PERSISTANT) {
+      if (analysis.signal !== 'WAIT') await sendDiscordAlert(analysis, levels, candles);
+    } else {
+      if (analysis.signal === 'WAIT' && lastNotificationSignal !== 'WAIT') {
+        await sendDiscordAlert(analysis, levels, candles);
+        lastNotificationSignal = 'WAIT';
+      } else if (analysis.signal !== 'WAIT' && analysis.signal !== lastNotificationSignal) {
+        await sendDiscordAlert(analysis, levels, candles);
+        lastNotificationSignal = analysis.signal;
+      }
     }
+
+    lastSignal = analysis.signal;
   } catch (err) {
     console.error('Erreur Cron:', err.message);
   }
@@ -218,8 +207,7 @@ let lastAnalysis = null;
 
 function appendToCSV(analysis) {
   const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend';
-  const line = `${analysis.timestamp || new Date().toISOString()},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}
-`;
+  const line = `${analysis.timestamp || new Date().toISOString()},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}\n`;
   if (!fs.existsSync(csvPath)) fs.writeFileSync(csvPath, header);
   fs.appendFileSync(csvPath, line);
 }
