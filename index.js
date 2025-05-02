@@ -115,14 +115,21 @@ function analyze(data) {
   else if (bearCount >= 3) signal = 'GOOD SELL';
   else if (bearCount >= 1) signal = 'SELL';
 
-  let trend = 'INDÉTERMINÉE';
-if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) {
+ // 🔍 Log debug temporaire
+console.log(`📉 PRICE: ${latest.price}, EMA50: ${latest.ema50}, EMA100: ${latest.ema100}`);
+
+// ✅ Fonctions robustes de comparaison
+const isGreater = (a, b, epsilon = 0.00001) => a - b > epsilon;
+const isLess = (a, b, epsilon = 0.00001) => b - a > epsilon;
+
+let trend = 'INDÉTERMINÉE';
+if (isGreater(latest.price, latest.ema50) && isGreater(latest.ema50, latest.ema100)) {
   trend = 'HAUSSIÈRE';
-} else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) {
+} else if (isLess(latest.price, latest.ema50) && isLess(latest.ema50, latest.ema100)) {
   trend = 'BAISSIÈRE';
-} else if (latest.ema50 > latest.ema100) {
+} else if (isGreater(latest.ema50, latest.ema100)) {
   trend = 'HAUSSIÈRE (modérée)';
-} else if (latest.ema50 < latest.ema100) {
+} else if (isLess(latest.ema50, latest.ema100)) {
   trend = 'BAISSIÈRE (modérée)';
 }
 
@@ -133,6 +140,7 @@ const emoji =
   '⏸️';
 
 const message = `${emoji} ${signal} en tendance ${trend}`;
+
 
 // 🔁 Résultat final
 return {
