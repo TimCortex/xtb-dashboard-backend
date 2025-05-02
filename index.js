@@ -1,4 +1,4 @@
-// ZenScalp - avec TRADE TOXIQUE calculé en pips
+// ZenScalp - avec sortie conseillée si drawdown > 8 pips et signal dégradé
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -18,7 +18,8 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 
 const LOT_SIZE = 0.3;
 const PIP_VALUE_EURUSD = 9.0 * LOT_SIZE; // ≈ 2.7 € par pip pour 0.3 lot
-const PIP_ALERT_THRESHOLD = 10; // seuil de pips perdus pour signal toxique
+const PIP_ALERT_THRESHOLD = 10; // seuil pips pour trade toxique
+const SIGNAL_DEGRADATION_EXIT_PIPS = 8; // seuil pips si signal baisse
 
 let lastSignal = 'WAIT';
 let lastNotificationSignal = null;
@@ -29,6 +30,7 @@ let toxicAlertSent = false;
 let lastPrice = 0;
 let lastToxicExitTime = null;
 let lastExitPrice = null;
+let entrySignal = null;
 const MAX_TRADE_DURATION_MIN = 20;
 
 function canReenter(analysis) {
@@ -45,8 +47,11 @@ async function sendReentryAlert(analysis) {
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
-function monitorToxicTrade(analysis) {
-  if (!tradeOpenTime) tradeOpenTime = Date.now();
+async function monitorToxicTrade(analysis) {
+  if (!tradeOpenTime) {
+    tradeOpenTime = Date.now();
+    entrySignal = analysis.signal;
+  }
   const minutesOpen = (Date.now() - tradeOpenTime) / 60000;
   const priceDiff = analysis.price - lastPrice;
   const pipsLost = Math.abs(priceDiff) / 0.0001;
@@ -56,6 +61,15 @@ function monitorToxicTrade(analysis) {
   if (pipsLost >= PIP_ALERT_THRESHOLD) toxicConditions++;
   if (minutesOpen >= MAX_TRADE_DURATION_MIN) toxicConditions++;
   if (analysis.signal === 'GOOD BUY') toxicConditions++;
+
+  // Nouveau cas : signal dégradé + perte > 8 pips
+  const signalDegraded = (entrySignal === 'GOOD BUY' || entrySignal === 'STRONG BUY') &&
+                         (analysis.signal === 'WAIT TO BUY' || analysis.signal === 'WAIT');
+  if (pipsLost >= SIGNAL_DEGRADATION_EXIT_PIPS && signalDegraded) {
+    const msg = `⚠️ **Sortie conseillée**\nPerte > ${SIGNAL_DEGRADATION_EXIT_PIPS} pips et signal dégradé\nSignal initial: ${entrySignal}\nSignal actuel: ${analysis.signal}\nPerte approx.: ${eurosLost.toFixed(2)} € (${pipsLost.toFixed(1)} pips)`;
+    console.warn(msg);
+    await axios.post(WEBHOOK_URL, { content: msg });
+  }
 
   if (toxicConditions >= 2 && !toxicAlertSent) {
     toxicAlertSent = true;
