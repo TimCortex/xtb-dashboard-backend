@@ -75,17 +75,6 @@ function analyze(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
 
-  if (close.length < 100) {
-    console.log('⛔ Données insuffisantes pour calculer EMA50 et EMA100');
-    return {
-      timestamp: new Date().toISOString(),
-      price: close.at(-1),
-      signal: 'WAIT',
-      trend: 'INDÉTERMINÉE',
-      message: '⏸️ WAIT en attente de données suffisantes'
-    };
-  }
-
   const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
   const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
@@ -126,39 +115,17 @@ function analyze(data) {
   else if (bearCount >= 3) signal = 'GOOD SELL';
   else if (bearCount >= 1) signal = 'SELL';
 
-  // 🔍 Debug EMA
-  console.log(`📉 PRICE: ${latest.price}, EMA50: ${latest.ema50}, EMA100: ${latest.ema100}`);
-
-  // Comparaison tolérante
-  const isGreater = (a, b, epsilon = 0.00001) => a - b > epsilon;
-  const isLess = (a, b, epsilon = 0.00001) => b - a > epsilon;
-
   let trend = 'INDÉTERMINÉE';
-  if (isGreater(latest.price, latest.ema50) && isGreater(latest.ema50, latest.ema100)) {
-    trend = 'HAUSSIÈRE';
-  } else if (isLess(latest.price, latest.ema50) && isLess(latest.ema50, latest.ema100)) {
-    trend = 'BAISSIÈRE';
-  } else if (isGreater(latest.ema50, latest.ema100)) {
-    trend = 'HAUSSIÈRE (modérée)';
-  } else if (isLess(latest.ema50, latest.ema100)) {
-    trend = 'BAISSIÈRE (modérée)';
-  }
-
-  const emoji =
-    signal.includes('SELL') ? '📉' :
-    signal.includes('BUY') ? '📈' :
-    '⏸️';
-
-  const message = `${emoji} ${signal} en tendance ${trend}`;
+  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
+  else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
 
   return {
     ...latest,
     signal,
     trend,
-    message
+    message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
   };
 }
-
 
 
 async function sendDiscordAlert(analysis, levels) {
