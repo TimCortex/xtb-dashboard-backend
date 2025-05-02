@@ -27,30 +27,7 @@ async function fetchForexData() {
   return data.results.reverse();
 }
 
-async function checkUpcomingEconomicEvents() {
-  try {
-    const now = new Date();
-    const nowISO = now.toISOString().split('T')[0];
-    const url = `https://financialmodelingprep.com/api/v4/economic_calendar?from=${nowISO}&to=${nowISO}&apikey=${FMP_API_KEY}`;
-    const { data } = await axios.get(url);
 
-    const upcoming = data.filter(event => {
-      const eventTime = new Date(`${event.date}T${event.time}`);
-      const diffMinutes = (eventTime - now) / 60000;
-      return ["USD", "EUR"].includes(event.country) && diffMinutes >= 0 && diffMinutes <= 15;
-    });
-
-    if (upcoming.length) {
-      suspendNotificationsUntil = new Date(Date.now() + 30 * 60000);
-      const message = upcoming.map(e => `📌 ${e.event} (${e.country}) à ${e.time}`).join('\n');
-      await axios.post(WEBHOOK_URL, {
-        content: `⏸️ **Suspension temporaire des alertes ZenScalp (annonce économique)**\n${message}`
-      });
-    }
-  } catch (err) {
-    console.error('Erreur évènements FMP :', err.message);
-  }
-}
 
 function detectLevels(data) {
   const prices = data.map(d => d.c);
@@ -169,18 +146,18 @@ async function sendDiscordAlert(analysis, levels) {
 
 cron.schedule('* * * * *', async () => {
   try {
-    const now = new Date();
-    if (!suspendNotificationsUntil || now > suspendNotificationsUntil) suspendNotificationsUntil = null;
-    if (!suspendNotificationsUntil) await checkUpcomingEconomicEvents();
-    if (suspendNotificationsUntil) return console.log('⏳ Notifications suspendues temporairement.');
-
     const candles = await fetchForexData();
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
     lastAnalysis = analysis;
+    appendToCSV(analysis);
+
+    console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
     if (!MODE_PERSISTANT) {
-      if (!analysis.signal.startsWith('WAIT')) await sendDiscordAlert(analysis, levels);
+      if (!analysis.signal.startsWith('WAIT')) {
+        await sendDiscordAlert(analysis, levels);
+      }
     } else {
       if (analysis.signal === 'WAIT' && lastNotificationSignal !== 'WAIT') {
         await sendDiscordAlert(analysis, levels);
@@ -190,10 +167,13 @@ cron.schedule('* * * * *', async () => {
         lastNotificationSignal = analysis.signal;
       }
     }
+
+    lastSignal = analysis.signal;
   } catch (err) {
     console.error('Erreur Cron :', err.message);
   }
 });
+
 
 const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
