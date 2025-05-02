@@ -1,4 +1,4 @@
-// ZenScalp - Version avec alerte TRADE TOXIQUE + Re-entry intelligente
+// ZenScalp - Script complet avec TRADE TOXIQUE + Re-entry + MACD protégé + OHLC élargi
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -64,7 +64,7 @@ function monitorToxicTrade(analysis) {
 
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=150&apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
   return data.results.reverse();
 }
@@ -142,7 +142,7 @@ function analyze(data) {
     ema50: ema50.at(-1),
     ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
-    macd: macd.length ? macd.at(-1) : { histogram: 0 },
+    macd: macd.length ? macd.at(-1) : { histogram: null },
     stoch: stoch.length ? stoch.at(-1) : { k: 0, d: 0 },
     sar: sar.length ? sar.at(-1) : close.at(-1),
     ichimoku
@@ -176,7 +176,7 @@ async function sendDiscordAlert(analysis, levels) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
   const warning = generateWarning(analysis.price, analysis.signal, levels);
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5)}\n`
+    + `💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram != null ? analysis.macd.histogram.toFixed(5) : 'non dispo'}\n`
     + `🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n`
     + `☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n`
     + `🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n`
@@ -236,7 +236,7 @@ app.get('/indicateurs', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend avec TRADE TOXIQUE + re-entry intelligente 🚀');
+  res.send('ZenScalp backend complet avec alerte toxique, re-entry et sécurité MACD 🚀');
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
