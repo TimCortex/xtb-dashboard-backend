@@ -1,4 +1,4 @@
-// ZenScalp - Version avec suspension des alertes + alerte TRADE TOXIQUE
+// ZenScalp - Version avec alerte TRADE TOXIQUE + Re-entry intelligente
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -23,14 +23,23 @@ let suspendNotificationsUntil = null;
 let tradeOpenTime = null;
 let toxicAlertSent = false;
 let lastPrice = 0;
+let lastToxicExitTime = null;
+let lastExitPrice = null;
 const MAX_TRADE_DURATION_MIN = 20;
 const MAX_DRAWDOWN_EUR = -10;
 
-async function fetchForexData() {
-  const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=150&apiKey=${POLYGON_API_KEY}`;
-  const { data } = await axios.get(url);
-  return data.results.reverse();
+function canReenter(analysis) {
+  const now = Date.now();
+  const delayPassed = !lastToxicExitTime || (now - lastToxicExitTime > 5 * 60 * 1000);
+  const betterPrice = lastExitPrice && analysis.price < lastExitPrice;
+  const goodSignal = analysis.signal === "GOOD BUY";
+  return delayPassed && betterPrice && goodSignal;
+}
+
+async function sendReentryAlert(analysis) {
+  const msg = `🔁 **Re-entry possible détectée**\nSignal: ${analysis.signal}\n💰 Nouveau prix: ${analysis.price}\n🕒 Temps écoulé depuis sortie toxique: ${(Date.now() - lastToxicExitTime) / 60000} min\n➡️ Envisage une nouvelle entrée.`;
+  console.log(msg);
+  await axios.post(WEBHOOK_URL, { content: msg });
 }
 
 function monitorToxicTrade(analysis) {
@@ -45,10 +54,19 @@ function monitorToxicTrade(analysis) {
 
   if (toxicConditions >= 2 && !toxicAlertSent) {
     toxicAlertSent = true;
+    lastToxicExitTime = Date.now();
+    lastExitPrice = analysis.price;
     const alert = `💀 TRADE TOXIQUE DÉTECTÉ 💀\nSignal: ${analysis.signal}\nDurée: ${minutesOpen.toFixed(1)} min\nPerte latente approx.: ${drawdown.toFixed(2)} €\n➡️ SORS !`;
     console.warn(alert);
     axios.post(WEBHOOK_URL, { content: alert });
   }
+}
+
+async function fetchForexData() {
+  const today = new Date().toISOString().split('T')[0];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=150&apiKey=${POLYGON_API_KEY}`;
+  const { data } = await axios.get(url);
+  return data.results.reverse();
 }
 
 function detectLevels(data) {
@@ -179,6 +197,10 @@ cron.schedule('* * * * *', async () => {
     if (!lastPrice) lastPrice = analysis.price;
     monitorToxicTrade(analysis);
 
+    if (canReenter(analysis)) {
+      await sendReentryAlert(analysis);
+    }
+
     if (!MODE_PERSISTANT) {
       if (!analysis.signal.startsWith('WAIT')) {
         await sendDiscordAlert(analysis, levels);
@@ -214,7 +236,7 @@ app.get('/indicateurs', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend avec suspension automatique lors des événements économiques 🚀');
+  res.send('ZenScalp backend avec TRADE TOXIQUE + re-entry intelligente 🚀');
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
