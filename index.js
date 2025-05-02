@@ -121,15 +121,18 @@ function analyze(data) {
   let signal = 'WAIT';
   if (bullCount >= 5) signal = 'STRONG BUY';
   else if (bullCount >= 3) signal = 'GOOD BUY';
-  else if (bullCount >= 1) signal = 'BUY';
+  else if (bullCount >= 1) signal = 'WAIT TO BUY';
   else if (bearCount >= 5) signal = 'STRONG SELL';
   else if (bearCount >= 3) signal = 'GOOD SELL';
-  else if (bearCount >= 1) signal = 'SELL';
+  else if (bearCount >= 1) signal = 'WAIT TO SELL';
 
   let trend = 'INDÉTERMINÉE';
   if (latest.ema50 && latest.ema100) {
-    if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
-    else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+    if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) {
+      trend = 'HAUSSIÈRE';
+    } else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) {
+      trend = 'BAISSIÈRE';
+    }
   }
 
   return {
@@ -139,6 +142,7 @@ function analyze(data) {
     message: `${signal.includes('SELL') ? '📉' : signal.includes('BUY') ? '📈' : '⏸️'} ${signal} en tendance ${trend}`
   };
 }
+
 
 function detectBreakout(data, levels) {
   const last = data.at(-1);
