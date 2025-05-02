@@ -69,6 +69,18 @@ function computeSLTP(price, signal, levels) {
   return { sl: sl.toFixed(5), tp: tp.toFixed(5) };
 }
 
+function generateWarning(price, signal, levels) {
+  const proximity = price * 0.0005; // ~5 pips
+  if (signal.includes('BUY')) {
+    const nearResistance = levels.resistance.find(r => Math.abs(r - price) <= proximity);
+    if (nearResistance) return `⚠️ Risque de retournement : prix proche résistance (${nearResistance.toFixed(5)})`;
+  } else if (signal.includes('SELL')) {
+    const nearSupport = levels.support.find(s => Math.abs(s - price) <= proximity);
+    if (nearSupport) return `⚠️ Risque de retournement : prix proche support (${nearSupport.toFixed(5)})`;
+  }
+  return '';
+}
+
 
 function analyze(data) {
   const close = data.map(c => c.c);
@@ -136,8 +148,17 @@ if (latest.ema50 && latest.ema100) {
 
 async function sendDiscordAlert(analysis, levels) {
   const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
+  const warning = generateWarning(analysis.price, analysis.signal, levels);
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**
-💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2) ?? 'N/A'}\n📉 MACD: ${analysis.macd?.histogram?.toFixed(5) ?? 'N/A'}\n🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2) ?? 'N/A'}, D ${analysis.stoch?.d?.toFixed(2) ?? 'N/A'}\n☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}`;
+💰 Prix: ${analysis.price}
+📈 RSI: ${analysis.rsi14?.toFixed(2) ?? 'N/A'}
+📉 MACD: ${analysis.macd?.histogram?.toFixed(5) ?? 'N/A'}
+🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2) ?? 'N/A'}, D ${analysis.stoch?.d?.toFixed(2) ?? 'N/A'}
+☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}
+🛑 SL: ${sl} | 🎯 TP: ${tp}
+📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}
+📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}
+${warning}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
