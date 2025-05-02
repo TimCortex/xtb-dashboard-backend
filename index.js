@@ -1,4 +1,4 @@
-// ZenScalp - Version avec suspension des alertes lors d’annonces économiques via FMP
+// ZenScalp - Version avec suspension des alertes + alerte TRADE TOXIQUE
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -20,6 +20,12 @@ let lastSignal = 'WAIT';
 let lastNotificationSignal = null;
 let suspendNotificationsUntil = null;
 
+let tradeOpenTime = null;
+let toxicAlertSent = false;
+let lastPrice = 0;
+const MAX_TRADE_DURATION_MIN = 20;
+const MAX_DRAWDOWN_EUR = -10;
+
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=150&apiKey=${POLYGON_API_KEY}`;
@@ -27,7 +33,23 @@ async function fetchForexData() {
   return data.results.reverse();
 }
 
+function monitorToxicTrade(analysis) {
+  if (!tradeOpenTime) tradeOpenTime = Date.now();
+  const minutesOpen = (Date.now() - tradeOpenTime) / 60000;
+  const drawdown = analysis.price - lastPrice;
+  let toxicConditions = 0;
 
+  if (drawdown < MAX_DRAWDOWN_EUR) toxicConditions++;
+  if (minutesOpen >= MAX_TRADE_DURATION_MIN) toxicConditions++;
+  if (analysis.signal === 'GOOD BUY') toxicConditions++;
+
+  if (toxicConditions >= 2 && !toxicAlertSent) {
+    toxicAlertSent = true;
+    const alert = `💀 TRADE TOXIQUE DÉTECTÉ 💀\nSignal: ${analysis.signal}\nDurée: ${minutesOpen.toFixed(1)} min\nPerte latente approx.: ${drawdown.toFixed(2)} €\n➡️ SORS !`;
+    console.warn(alert);
+    axios.post(WEBHOOK_URL, { content: alert });
+  }
+}
 
 function detectLevels(data) {
   const prices = data.map(d => d.c);
@@ -154,6 +176,9 @@ cron.schedule('* * * * *', async () => {
 
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
+    if (!lastPrice) lastPrice = analysis.price;
+    monitorToxicTrade(analysis);
+
     if (!MODE_PERSISTANT) {
       if (!analysis.signal.startsWith('WAIT')) {
         await sendDiscordAlert(analysis, levels);
@@ -173,7 +198,6 @@ cron.schedule('* * * * *', async () => {
     console.error('Erreur Cron :', err.message);
   }
 });
-
 
 const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
