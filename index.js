@@ -1,4 +1,4 @@
-// ZenScalp - analyse minute avec warning S/R sans blocage
+// ZenScalp - meilleure détection de tendance et filtrage GOOD BUY/SELL en zone neutre
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -101,14 +101,21 @@ function analyze(data) {
   else if (bear >= 3) signal = 'GOOD SELL';
   else if (bear >= 1) signal = 'WAIT TO SELL';
 
+  // 🔁 Définir tendance de fond souple (EMA only)
   let trend = 'INDÉTERMINÉE';
-  if (latest.ema50 && latest.ema100) {
-    if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
-    else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+  const above50 = latest.price > latest.ema50;
+  const above100 = latest.price > latest.ema100;
+  if (above50 && above100) trend = 'HAUSSIÈRE';
+  else if (!above50 && !above100) trend = 'BAISSIÈRE';
+
+  // 🔒 Bloquer signaux forts si tendance neutre
+  if (trend === 'INDÉTERMINÉE' && (signal === 'GOOD BUY' || signal === 'GOOD SELL')) {
+    signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
   return { ...latest, signal, trend };
 }
+
 
 async function sendDiscordAlert(analysis, levels) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
