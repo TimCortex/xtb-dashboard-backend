@@ -213,7 +213,14 @@ cron.schedule('* * * * *', async () => {
 
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
-    if (!lastPrice) lastPrice = analysis.price;
+    // ✅ Reset signal d'entrée dès qu'un nouveau signal BUY fort apparaît
+    if (analysis.signal === 'GOOD BUY' || analysis.signal === 'STRONG BUY') {
+      lastPrice = analysis.price;
+      entrySignal = analysis.signal;
+      tradeOpenTime = Date.now();
+      toxicAlertSent = false;
+    }
+
     monitorToxicTrade(analysis);
 
     if (canReenter(analysis)) {
@@ -239,6 +246,7 @@ cron.schedule('* * * * *', async () => {
     console.error('Erreur Cron :', err.message);
   }
 });
+
 
 const csvPath = path.join(__dirname, 'signals.csv');
 let lastAnalysis = null;
