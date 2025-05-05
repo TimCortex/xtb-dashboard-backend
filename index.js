@@ -159,12 +159,12 @@ function analyze(data) {
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram != null ? analysis.macd.histogram.toFixed(5) : 'non dispo'}\n`
-    + `🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n`
-    + `☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n`
-    + `📊 Tendance: ${analysis.trend}\n${warning ? warning + '\n' : ''}${pattern ? pattern : ''}`;
+    + `💰 Prix: ${analysis.price}\n`
+    + `📊 Tendance: ${analysis.trend}\n`
+    + `${warning ? warning + '\n' : ''}${pattern ? pattern : ''}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
+
 
 cron.schedule('* * * * *', async () => {
   try {
