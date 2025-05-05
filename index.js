@@ -1,4 +1,4 @@
-// ZenScalp - meilleure détection de tendance et filtrage GOOD BUY/SELL en zone neutre
+// ZenScalp - avec détection des figures de bougies japonaises 5m
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -14,6 +14,45 @@ console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
+
+const ANNOUNCEMENT_WINDOWS = [
+  { time: '07:00', symbol: 'EUR' },
+  { time: '08:00', symbol: 'EUR' },
+  { time: '14:30', symbol: 'USD' },
+  { time: '16:00', symbol: 'USD' }
+];
+
+function isDuringPauseWindow() {
+  const now = new Date();
+  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return ANNOUNCEMENT_WINDOWS.some(({ time }) => {
+    const [h, m] = time.split(':').map(Number);
+    const scheduled = h * 60 + m;
+    return Math.abs(currentMinutes - scheduled) <= 5;
+  });
+}
+
+function detectCandlePattern(candle) {
+  const body = Math.abs(candle.c - candle.o);
+  const range = candle.h - candle.l;
+  const upperWick = candle.h - Math.max(candle.c, candle.o);
+  const lowerWick = Math.min(candle.c, candle.o) - candle.l;
+  const bodyPct = body / range;
+
+  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) {
+    return candle.c < candle.o ? '🟥 Marubozu baissière — forte pression vendeuse' : '🟩 Marubozu haussière — forte pression acheteuse';
+  }
+  if (bodyPct < 0.15 && upperWick > range * 0.2 && lowerWick > range * 0.2) {
+    return '🟨 Doji — indécision sur le marché';
+  }
+  if (upperWick > body * 2 && lowerWick < body) {
+    return '💥 Shooting star — possible retournement baissier';
+  }
+  if (lowerWick > body * 2 && upperWick < body) {
+    return '🔨 Marteau — possible retournement haussier';
+  }
+  return null;
+}
 
 let lastSignal = 'WAIT';
 let lastNotificationSignal = null;
@@ -117,27 +156,35 @@ function analyze(data) {
 }
 
 
-async function sendDiscordAlert(analysis, levels) {
+async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram != null ? analysis.macd.histogram.toFixed(5) : 'non dispo'}\n`
     + `🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n`
     + `☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n`
-    + `📊 Tendance: ${analysis.trend}\n${warning}`;
+    + `📊 Tendance: ${analysis.trend}\n${warning ? warning + '\n' : ''}${pattern ? pattern : ''}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
 cron.schedule('* * * * *', async () => {
   try {
+    if (isDuringPauseWindow()) {
+      console.log('⏸️ Pause ZenScalp autour d’une annonce économique.');
+      return;
+    }
+
     const candles = await fetchForexData();
+    const lastCandle = candles.at(-1);
     const levels = detectLevels(candles);
     const analysis = analyze(candles);
     lastAnalysis = analysis;
     appendToCSV(analysis);
 
+    const pattern = detectCandlePattern(lastCandle);
+
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
-    await sendDiscordAlert(analysis, levels);
+    await sendDiscordAlert(analysis, levels, pattern);
 
   } catch (err) {
     console.error('Erreur Cron :', err.message);
@@ -158,7 +205,8 @@ app.get('/indicateurs', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend - analyse continue avec warning S/R 🚀');
+  res.send('ZenScalp backend - analyse avec détection des figures de chandeliers 🚀');
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
+
