@@ -1,4 +1,4 @@
-// ZenScalp - mode pragmatique : analyse minute sans alertes de sortie
+// ZenScalp - analyse minute avec warning S/R sans blocage
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -45,6 +45,18 @@ function calculateIchimoku(data) {
   const conv = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
   const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
   return { conversion: conv, base };
+}
+
+function generateWarning(price, signal, levels) {
+  const proximity = price * 0.0005;
+  if (signal.includes('BUY')) {
+    const nearRes = levels.resistance.find(r => Math.abs(r - price) <= proximity);
+    if (nearRes) return `⚠️ Risque de retournement : prix proche résistance (${nearRes.toFixed(5)})`;
+  } else if (signal.includes('SELL')) {
+    const nearSup = levels.support.find(s => Math.abs(s - price) <= proximity);
+    if (nearSup) return `⚠️ Risque de retournement : prix proche support (${nearSup.toFixed(5)})`;
+  }
+  return '';
 }
 
 function analyze(data) {
@@ -99,11 +111,12 @@ function analyze(data) {
 }
 
 async function sendDiscordAlert(analysis, levels) {
+  const warning = generateWarning(analysis.price, analysis.signal, levels);
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram != null ? analysis.macd.histogram.toFixed(5) : 'non dispo'}\n`
     + `🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n`
     + `☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n`
-    + `📊 Tendance: ${analysis.trend}`;
+    + `📊 Tendance: ${analysis.trend}\n${warning}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
@@ -138,7 +151,7 @@ app.get('/indicateurs', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend - mode analyse continue sans alertes de sortie 🚀');
+  res.send('ZenScalp backend - analyse continue avec warning S/R 🚀');
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
