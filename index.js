@@ -1,4 +1,4 @@
-// ZenScalp - avec sortie conseillée si drawdown > 8 pips et signal dégradé
+// ZenScalp - mode pragmatique : analyse minute sans alertes de sortie
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -12,74 +12,12 @@ const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
 console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
 
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
-const FMP_API_KEY = 'Zrtua3jx9BV8HpOsgFc9ESQT1bbNP0rd';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
-const LOT_SIZE = 0.3;
-const PIP_VALUE_EURUSD = 9.0 * LOT_SIZE; // ≈ 2.7 € par pip pour 0.3 lot
-const PIP_ALERT_THRESHOLD = 10; // seuil pips pour trade toxique
-const SIGNAL_DEGRADATION_EXIT_PIPS = 8; // seuil pips si signal baisse
-
 let lastSignal = 'WAIT';
 let lastNotificationSignal = null;
-let suspendNotificationsUntil = null;
-
-let tradeOpenTime = null;
-let toxicAlertSent = false;
-let lastPrice = 0;
-let lastToxicExitTime = null;
-let lastExitPrice = null;
-let entrySignal = null;
-const MAX_TRADE_DURATION_MIN = 20;
-
-function canReenter(analysis) {
-  const now = Date.now();
-  const delayPassed = !lastToxicExitTime || (now - lastToxicExitTime > 5 * 60 * 1000);
-  const betterPrice = lastExitPrice && analysis.price < lastExitPrice;
-  const goodSignal = analysis.signal === "GOOD BUY";
-  return delayPassed && betterPrice && goodSignal;
-}
-
-async function sendReentryAlert(analysis) {
-  const msg = `🔁 **Re-entry possible détectée**\nSignal: ${analysis.signal}\n💰 Nouveau prix: ${analysis.price}\n🕒 Temps écoulé depuis sortie toxique: ${(Date.now() - lastToxicExitTime) / 60000} min\n➡️ Envisage une nouvelle entrée.`;
-  console.log(msg);
-  await axios.post(WEBHOOK_URL, { content: msg });
-}
-
-async function monitorToxicTrade(analysis) {
-  if (!tradeOpenTime) {
-    tradeOpenTime = Date.now();
-    entrySignal = analysis.signal;
-  }
-  const minutesOpen = (Date.now() - tradeOpenTime) / 60000;
-  const priceDiff = analysis.price - lastPrice;
-  const pipsLost = Math.abs(priceDiff) / 0.0001;
-  const eurosLost = pipsLost * PIP_VALUE_EURUSD;
-
-  let toxicConditions = 0;
-  if (pipsLost >= PIP_ALERT_THRESHOLD) toxicConditions++;
-  if (minutesOpen >= MAX_TRADE_DURATION_MIN) toxicConditions++;
-  if (analysis.signal === 'GOOD BUY') toxicConditions++;
-
-  // Nouveau cas : signal dégradé + perte > 8 pips
-  const signalDegraded = (entrySignal === 'GOOD BUY' || entrySignal === 'STRONG BUY') &&
-                         (analysis.signal === 'WAIT TO BUY' || analysis.signal === 'WAIT');
-  if (pipsLost >= SIGNAL_DEGRADATION_EXIT_PIPS && signalDegraded) {
-    const msg = `⚠️ **Sortie conseillée**\nPerte > ${SIGNAL_DEGRADATION_EXIT_PIPS} pips et signal dégradé\nSignal initial: ${entrySignal}\nSignal actuel: ${analysis.signal}\nPerte approx.: ${eurosLost.toFixed(2)} € (${pipsLost.toFixed(1)} pips)`;
-    console.warn(msg);
-    await axios.post(WEBHOOK_URL, { content: msg });
-  }
-
-  if (toxicConditions >= 2 && !toxicAlertSent) {
-    toxicAlertSent = true;
-    lastToxicExitTime = Date.now();
-    lastExitPrice = analysis.price;
-    const alert = `💀 TRADE TOXIQUE DÉTECTÉ 💀\nSignal: ${analysis.signal}\nDurée: ${minutesOpen.toFixed(1)} min\nPerte approx.: ${eurosLost.toFixed(2)} € (${pipsLost.toFixed(1)} pips)\n➡️ SORS !`;
-    console.warn(alert);
-    axios.post(WEBHOOK_URL, { content: alert });
-  }
-}
+let lastAnalysis = null;
 
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
@@ -107,37 +45,6 @@ function calculateIchimoku(data) {
   const conv = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
   const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
   return { conversion: conv, base };
-}
-
-function computeSLTP(price, signal, levels) {
-  let sl, tp;
-  if (levels.support.length && levels.resistance.length) {
-    if (signal.includes('BUY')) {
-      sl = levels.support.find(s => s < price) ?? price - price * 0.001;
-      tp = levels.resistance.find(r => r > price) ?? price + price * 0.002;
-    } else {
-      sl = levels.resistance.find(r => r > price) ?? price + price * 0.001;
-      tp = levels.support.find(s => s < price) ?? price - price * 0.002;
-    }
-  } else {
-    const percentSL = price * 0.001;
-    const percentTP = price * 0.002;
-    sl = signal.includes('BUY') ? price - percentSL : price + percentSL;
-    tp = signal.includes('BUY') ? price + percentTP : price - percentTP;
-  }
-  return { sl: sl.toFixed(5), tp: tp.toFixed(5) };
-}
-
-function generateWarning(price, signal, levels) {
-  const proximity = price * 0.0005;
-  if (signal.includes('BUY')) {
-    const nearRes = levels.resistance.find(r => Math.abs(r - price) <= proximity);
-    if (nearRes) return `⚠️ Risque de retournement : prix proche résistance (${nearRes.toFixed(5)})`;
-  } else if (signal.includes('SELL')) {
-    const nearSup = levels.support.find(s => Math.abs(s - price) <= proximity);
-    if (nearSup) return `⚠️ Risque de retournement : prix proche support (${nearSup.toFixed(5)})`;
-  }
-  return '';
 }
 
 function analyze(data) {
@@ -192,14 +99,11 @@ function analyze(data) {
 }
 
 async function sendDiscordAlert(analysis, levels) {
-  const { sl, tp } = computeSLTP(analysis.price, analysis.signal, levels);
-  const warning = generateWarning(analysis.price, analysis.signal, levels);
   const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix: ${analysis.price}\n📈 RSI: ${analysis.rsi14?.toFixed(2)}\n📉 MACD: ${analysis.macd?.histogram != null ? analysis.macd.histogram.toFixed(5) : 'non dispo'}\n`
     + `🎯 Stoch: K ${analysis.stoch?.k?.toFixed(2)}, D ${analysis.stoch?.d?.toFixed(2)}\n`
     + `☁️ Ichimoku: Tenkan ${analysis.ichimoku?.conversion?.toFixed(5)}, Kijun ${analysis.ichimoku?.base?.toFixed(5)}\n`
-    + `🛑 SL: ${sl} | 🎯 TP: ${tp}\n📎 Supports: ${levels.support.map(p => p.toFixed(5)).join(', ')}\n`
-    + `📎 Résistances: ${levels.resistance.map(p => p.toFixed(5)).join(', ')}\n${warning}`;
+    + `📊 Tendance: ${analysis.trend}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
@@ -213,43 +117,14 @@ cron.schedule('* * * * *', async () => {
 
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
 
-    // ✅ Reset signal d'entrée dès qu'un nouveau signal BUY fort apparaît
-    if (analysis.signal === 'GOOD BUY' || analysis.signal === 'STRONG BUY') {
-      lastPrice = analysis.price;
-      entrySignal = analysis.signal;
-      tradeOpenTime = Date.now();
-      toxicAlertSent = false;
-    }
+    await sendDiscordAlert(analysis, levels);
 
-    monitorToxicTrade(analysis);
-
-    if (canReenter(analysis)) {
-      await sendReentryAlert(analysis);
-    }
-
-    if (!MODE_PERSISTANT) {
-      if (!analysis.signal.startsWith('WAIT')) {
-        await sendDiscordAlert(analysis, levels);
-      }
-    } else {
-      if (analysis.signal === 'WAIT' && lastNotificationSignal !== 'WAIT') {
-        await sendDiscordAlert(analysis, levels);
-        lastNotificationSignal = 'WAIT';
-      } else if (analysis.signal !== 'WAIT' && analysis.signal !== lastNotificationSignal) {
-        await sendDiscordAlert(analysis, levels);
-        lastNotificationSignal = analysis.signal;
-      }
-    }
-
-    lastSignal = analysis.signal;
   } catch (err) {
     console.error('Erreur Cron :', err.message);
   }
 });
 
-
 const csvPath = path.join(__dirname, 'signals.csv');
-let lastAnalysis = null;
 function appendToCSV(analysis) {
   const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend';
   const line = `${analysis.timestamp},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}\n`;
@@ -263,7 +138,7 @@ app.get('/indicateurs', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend complet avec alerte toxique, re-entry et sécurité MACD 🚀');
+  res.send('ZenScalp backend - mode analyse continue sans alertes de sortie 🚀');
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
