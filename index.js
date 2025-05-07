@@ -36,16 +36,24 @@ function saveAnnouncementWindows(data) {
 }
 function isDuringPauseWindow() {
   const now = new Date();
-  const offset = 2 * 60; // UTC+2 pour CEST (été) ou UTC+1 pour CET (hiver)
-  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + offset;
+  const currentUTCMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
 
   const windows = loadAnnouncementWindows();
   return windows.some(({ time }) => {
-    const [h, m] = time.split(':').map(Number);
-    const scheduled = h * 60 + m;
-    return Math.abs(currentMinutes - scheduled) <= 15;
+    const [localHour, localMinute] = time.split(':').map(Number);
+
+    // Convertir l'heure locale (Paris) en UTC (gère automatiquement l'été/hiver)
+    const localDate = new Date();
+    localDate.setHours(localHour, localMinute, 0, 0);
+
+    const utcHour = localDate.getUTCHours();
+    const utcMinute = localDate.getUTCMinutes();
+    const scheduledUTC = utcHour * 60 + utcMinute;
+
+    return Math.abs(currentUTCMinutes - scheduledUTC) <= 15;
   });
 }
+
 
 function detectCandlePattern(candle) {
   const body = Math.abs(candle.c - candle.o);
