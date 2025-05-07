@@ -180,15 +180,22 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
+function getParisTimeString() {
+  const now = new Date();
+  const offset = 2; // CEST = UTC+2, passe à 1 pour l’hiver (CET)
+  now.setHours(now.getHours() + offset);
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
 async function sendPauseAlert(nextTime) {
-  const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue à ${nextTime}\nLes analyses sont suspendues temporairement.`;
+  const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue à ${getParisTimeString()}\nLes analyses sont suspendues temporairement.`;
   console.log(msg);
   await axios.post(WEBHOOK_URL, { content: msg });
   lastPauseMessage = nextTime;
 }
 
 async function sendResumeAlert() {
-  const msg = `✅ **Reprise des analyses ZenScalp**\nFin de la période d'annonce économique.\nLes signaux reprennent normalement.`;
+  const msg = `✅ **Reprise des analyses ZenScalp**\nFin de la période d'annonce économique (${getParisTimeString()}).\nLes signaux reprennent normalement.`;
   console.log(msg);
   await axios.post(WEBHOOK_URL, { content: msg });
   lastPauseMessage = null;
