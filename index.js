@@ -1,4 +1,4 @@
-// ZenScalp - Notification des pauses dans Discord (mise à jour avec niveaux majeurs)
+// ZenScalp - Notification des pauses dans Discord
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -36,24 +36,16 @@ function saveAnnouncementWindows(data) {
 }
 function isDuringPauseWindow() {
   const now = new Date();
-  const currentUTCMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const offset = 2 * 60; // UTC+2 pour CEST (été) ou UTC+1 pour CET (hiver)
+  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + offset;
 
   const windows = loadAnnouncementWindows();
   return windows.some(({ time }) => {
-    const [localHour, localMinute] = time.split(':').map(Number);
-
-    // Convertir l'heure locale (Paris) en UTC (gère automatiquement l'été/hiver)
-    const localDate = new Date();
-    localDate.setHours(localHour, localMinute, 0, 0);
-
-    const utcHour = localDate.getUTCHours();
-    const utcMinute = localDate.getUTCMinutes();
-    const scheduledUTC = utcHour * 60 + utcMinute;
-
-    return Math.abs(currentUTCMinutes - scheduledUTC) <= 15;
+    const [h, m] = time.split(':').map(Number);
+    const scheduled = h * 60 + m;
+    return Math.abs(currentMinutes - scheduled) <= 15;
   });
 }
-
 
 function detectCandlePattern(candle) {
   const body = Math.abs(candle.c - candle.o);
@@ -99,29 +91,6 @@ function detectLevels(data) {
     support: supports.length ? supports.sort((a, b) => b - a).slice(-2) : [],
     resistance: resistances.length ? resistances.sort((a, b) => b - a).slice(0, 2) : []
   };
-}
-
-function classifyLevels(levels, prices) {
-  const threshold = 0.0005; // 5 pips d'approximation
-  const classification = { support: [], resistance: [] };
-
-  for (const type of ['support', 'resistance']) {
-    for (const level of levels[type]) {
-      let touches = 0;
-      for (let i = 3; i < prices.length - 3; i++) {
-        const isTouch = Math.abs(prices[i] - level) < threshold;
-        const isExtreme = type === 'support'
-          ? prices[i] < prices[i - 1] && prices[i] < prices[i + 1]
-          : prices[i] > prices[i - 1] && prices[i] > prices[i + 1];
-        if (isTouch && isExtreme) touches++;
-      }
-      classification[type].push({
-        value: level,
-        type: touches >= 2 ? 'majeur' : 'mineur'
-      });
-    }
-  }
-  return classification;
 }
 
 function calculateIchimoku(data) {
@@ -216,28 +185,15 @@ return { ...latest, signal, trend, recentRange };
 
 
 async function sendDiscordAlert(analysis, levels, pattern = null) {
-  const classified = classifyLevels(levels, [analysis.price, ...Array(299).fill(analysis.price)]); // temporaire : remplacer par les vrais prix du range
   const warning = generateWarning(analysis.price, analysis.signal, levels);
-  const showWarning = ['GOOD BUY', 'STRONG BUY', 'GOOD SELL', 'STRONG SELL'].includes(analysis.signal);
-
-  const formattedLevels = (arr) =>
-    arr.map(lvl => `${lvl.value.toFixed(5)} (${lvl.type})`).join(', ') || 'Aucun';
 
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix: ${analysis.price}\n`
     + `📊 Tendance: ${analysis.trend}\n`
-    + `📎 Supports : ${formattedLevels(classified.support)}\n`
-    + `📎 Résistances : ${formattedLevels(classified.resistance)}\n`
-    + `${warning ? warning + '\n' : ''}`
-    + `${pattern ? pattern + '\n' : ''}`;
-
-  // Ajout d'un avertissement explicite
-  if (showWarning && warning.includes('majeur')) {
-    msg += `⚠️ Niveau majeur à proximité — prudence conseillée.\n`;
-  }
+    + `${warning ? warning + '\n' : ''}${pattern ? pattern + '\n' : ''}`;
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
-    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips — signal atténué.`;
+    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
   }
 
   await axios.post(WEBHOOK_URL, { content: msg });
@@ -269,28 +225,20 @@ async function sendResumeAlert() {
 cron.schedule('* * * * *', async () => {
   try {
     const pausedNow = isDuringPauseWindow();
-    const now = Date.now();
+if (pausedNow && !isPaused) {
+  isPaused = true;
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  if (lastPauseMessage !== currentTime) await sendPauseAlert(currentTime);
+  return;
+}
 
-    if (pausedNow && !isPaused) {
-      isPaused = true;
-      if (!lastPauseMessage || now - lastPauseMessage > 60 * 1000) {
-        await sendPauseAlert(getParisTimeString());
-        lastPauseMessage = now;
-      }
-      console.log('⏸️ Analyse suspendue (pause active)');
-      return;
-    }
+if (!pausedNow && isPaused) {
+  isPaused = false;
+  await sendResumeAlert();
+}
+if (isPaused) return;
 
-    if (!pausedNow && isPaused) {
-      isPaused = false;
-      await sendResumeAlert();
-      lastPauseMessage = null;
-    }
-
-    if (isPaused) {
-      console.log('⏸️ Tick ignoré — pause en cours');
-      return;
-    }
 
     const candles = await fetchForexData();
     const lastCandle = candles.at(-1);
@@ -302,13 +250,13 @@ cron.schedule('* * * * *', async () => {
     const pattern = detectCandlePattern(lastCandle);
 
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
+
     await sendDiscordAlert(analysis, levels, pattern);
 
   } catch (err) {
-    console.error('❌ Erreur Cron :', err.message);
+    console.error('Erreur Cron :', err.message);
   }
 });
-
 
 const csvPath = path.join(__dirname, 'signals.csv');
 function appendToCSV(analysis) {
