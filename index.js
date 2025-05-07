@@ -1,12 +1,16 @@
-// ZenScalp - avec détection des figures de bougies japonaises 5m
+// ZenScalp - gestion dynamique des annonces via formulaire
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
 const technicalIndicators = require('technicalindicators');
 const fs = require('fs');
 const path = require('path');
+const bodyParser = require('body-parser');
 
 const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
 const PORT = process.env.PORT || 3000;
 const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
 console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
@@ -15,17 +19,23 @@ const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
-const ANNOUNCEMENT_WINDOWS = [
-  { time: '07:00', symbol: 'EUR' },
-  { time: '08:00', symbol: 'EUR' },
-  { time: '14:30', symbol: 'USD' },
-  { time: '16:00', symbol: 'USD' }
-];
-
+const ANNOUNCEMENT_FILE = path.join(__dirname, 'announcements.json');
+function loadAnnouncementWindows() {
+  try {
+    return JSON.parse(fs.readFileSync(ANNOUNCEMENT_FILE, 'utf-8'));
+  } catch (err) {
+    console.error('Erreur lecture annonces :', err.message);
+    return [];
+  }
+}
+function saveAnnouncementWindows(data) {
+  fs.writeFileSync(ANNOUNCEMENT_FILE, JSON.stringify(data, null, 2));
+}
 function isDuringPauseWindow() {
   const now = new Date();
   const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-  return ANNOUNCEMENT_WINDOWS.some(({ time }) => {
+  const windows = loadAnnouncementWindows();
+  return windows.some(({ time }) => {
     const [h, m] = time.split(':').map(Number);
     const scheduled = h * 60 + m;
     return Math.abs(currentMinutes - scheduled) <= 5;
@@ -140,21 +150,18 @@ function analyze(data) {
   else if (bear >= 3) signal = 'GOOD SELL';
   else if (bear >= 1) signal = 'WAIT TO SELL';
 
-  // 🔁 Définir tendance de fond souple (EMA only)
   let trend = 'INDÉTERMINÉE';
   const above50 = latest.price > latest.ema50;
   const above100 = latest.price > latest.ema100;
   if (above50 && above100) trend = 'HAUSSIÈRE';
   else if (!above50 && !above100) trend = 'BAISSIÈRE';
 
-  // 🔒 Bloquer signaux forts si tendance neutre
   if (trend === 'INDÉTERMINÉE' && (signal === 'GOOD BUY' || signal === 'GOOD SELL')) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
   return { ...latest, signal, trend };
 }
-
 
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
@@ -164,7 +171,6 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
     + `${warning ? warning + '\n' : ''}${pattern ? pattern : ''}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
-
 
 cron.schedule('* * * * *', async () => {
   try {
@@ -204,9 +210,31 @@ app.get('/indicateurs', (req, res) => {
   res.json(lastAnalysis);
 });
 
+app.get('/annonces', (req, res) => {
+  const annonces = loadAnnouncementWindows();
+  res.send(`
+    <html><body>
+    <h2>🗓️ Gestion des annonces économiques</h2>
+    <form action="/update-announcements" method="POST">
+      <textarea name="data" rows="15" cols="50">${JSON.stringify(annonces, null, 2)}</textarea><br><br>
+      <button type="submit">💾 Enregistrer</button>
+    </form>
+    </body></html>
+  `);
+});
+
+app.post('/update-announcements', (req, res) => {
+  try {
+    const jsonData = JSON.parse(req.body.data);
+    saveAnnouncementWindows(jsonData);
+    res.send('<p>✅ Données mises à jour. <a href="/annonces">Retour</a></p>');
+  } catch (err) {
+    res.status(400).send(`<p>❌ Erreur JSON : ${err.message} <a href="/annonces">Retour</a></p>`);
+  }
+});
+
 app.get('/', (req, res) => {
-  res.send('ZenScalp backend - analyse avec détection des figures de chandeliers 🚀');
+  res.send('ZenScalp backend - analyse avec détection des figures de chandeliers et gestion web des annonces 🚀');
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
-
