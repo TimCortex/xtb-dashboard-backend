@@ -167,18 +167,38 @@ else if (bear >= 1 && bull <= 2) signal = 'WAIT TO SELL';
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
-  return { ...latest, signal, trend };
+ // 🔍 Détection d’un range étroit sur les 20 dernières bougies
+const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
+const rangeThreshold = 0.0010; // 10 pips
+const isRanging = recentRange < rangeThreshold;
+
+// ❌ Suppression des signaux forts dans un range
+if (isRanging) {
+  if (signal === 'STRONG BUY' || signal === 'GOOD BUY') signal = 'WAIT TO BUY';
+  else if (signal === 'STRONG SELL' || signal === 'GOOD SELL') signal = 'WAIT TO SELL';
+}
+
+
+return { ...latest, signal, trend, recentRange };
+
 }
 
 
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
-  const msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
+
+  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix: ${analysis.price}\n`
     + `📊 Tendance: ${analysis.trend}\n`
-    + `${warning ? warning + '\n' : ''}${pattern ? pattern : ''}`;
+    + `${warning ? warning + '\n' : ''}${pattern ? pattern + '\n' : ''}`;
+
+  if (analysis.recentRange && analysis.recentRange < 0.0010) {
+    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
+  }
+
   await axios.post(WEBHOOK_URL, { content: msg });
 }
+
 
 function getParisTimeString() {
   const now = new Date();
