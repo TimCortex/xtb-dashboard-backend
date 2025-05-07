@@ -40,7 +40,7 @@ function isDuringPauseWindow() {
   return windows.some(({ time }) => {
     const [h, m] = time.split(':').map(Number);
     const scheduled = h * 60 + m;
-    return Math.abs(currentMinutes - scheduled) <= 10;
+    return Math.abs(currentMinutes - scheduled) <= 15;
   });
 }
 
