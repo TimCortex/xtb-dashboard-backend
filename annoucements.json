@@ -1,0 +1,6 @@
+[
+  { "time": "07:00", "symbol": "EUR" },
+  { "time": "08:00", "symbol": "EUR" },
+  { "time": "14:30", "symbol": "USD" },
+  { "time": "16:00", "symbol": "USD" }
+]
