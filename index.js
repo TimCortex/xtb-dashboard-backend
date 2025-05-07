@@ -1,4 +1,4 @@
-// ZenScalp - Gestion dynamique des annonces via formulaire + correction signaux
+// ZenScalp - Chemin relatif pour annoucements.json
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
