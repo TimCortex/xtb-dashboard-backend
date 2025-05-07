@@ -261,20 +261,28 @@ async function sendResumeAlert() {
 cron.schedule('* * * * *', async () => {
   try {
     const pausedNow = isDuringPauseWindow();
-if (pausedNow && !isPaused) {
-  isPaused = true;
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  if (lastPauseMessage !== currentTime) await sendPauseAlert(currentTime);
-  return;
-}
+    const now = Date.now();
 
-if (!pausedNow && isPaused) {
-  isPaused = false;
-  await sendResumeAlert();
-}
-if (isPaused) return;
+    if (pausedNow && !isPaused) {
+      isPaused = true;
+      if (!lastPauseMessage || now - lastPauseMessage > 60 * 1000) {
+        await sendPauseAlert(getParisTimeString());
+        lastPauseMessage = now;
+      }
+      console.log('⏸️ Analyse suspendue (pause active)');
+      return;
+    }
 
+    if (!pausedNow && isPaused) {
+      isPaused = false;
+      await sendResumeAlert();
+      lastPauseMessage = null;
+    }
+
+    if (isPaused) {
+      console.log('⏸️ Tick ignoré — pause en cours');
+      return;
+    }
 
     const candles = await fetchForexData();
     const lastCandle = candles.at(-1);
@@ -286,13 +294,13 @@ if (isPaused) return;
     const pattern = detectCandlePattern(lastCandle);
 
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
-
     await sendDiscordAlert(analysis, levels, pattern);
 
   } catch (err) {
-    console.error('Erreur Cron :', err.message);
+    console.error('❌ Erreur Cron :', err.message);
   }
 });
+
 
 const csvPath = path.join(__dirname, 'signals.csv');
 function appendToCSV(analysis) {
