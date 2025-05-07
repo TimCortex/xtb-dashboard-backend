@@ -33,7 +33,9 @@ function saveAnnouncementWindows(data) {
 }
 function isDuringPauseWindow() {
   const now = new Date();
-  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const offset = 2 * 60; // UTC+2 pour CEST (été) ou UTC+1 pour CET (hiver)
+  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + offset;
+
   const windows = loadAnnouncementWindows();
   return windows.some(({ time }) => {
     const [h, m] = time.split(':').map(Number);
