@@ -1,4 +1,4 @@
-// ZenScalp - Chemin relatif pour annoucements.json
+// ZenScalp - Notification des pauses dans Discord
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -6,6 +6,9 @@ const technicalIndicators = require('technicalindicators');
 const fs = require('fs');
 const path = require('path');
 const bodyParser = require('body-parser');
+let isPaused = false;
+let lastPauseMessage = null;
+
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -176,6 +179,21 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
     + `${warning ? warning + '\n' : ''}${pattern ? pattern : ''}`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
+
+async function sendPauseAlert(nextTime) {
+  const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue à ${nextTime}\nLes analyses sont suspendues temporairement.`;
+  console.log(msg);
+  await axios.post(WEBHOOK_URL, { content: msg });
+  lastPauseMessage = nextTime;
+}
+
+async function sendResumeAlert() {
+  const msg = `✅ **Reprise des analyses ZenScalp**\nFin de la période d'annonce économique.\nLes signaux reprennent normalement.`;
+  console.log(msg);
+  await axios.post(WEBHOOK_URL, { content: msg });
+  lastPauseMessage = null;
+}
+
 
 cron.schedule('* * * * *', async () => {
   try {
