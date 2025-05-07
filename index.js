@@ -197,10 +197,21 @@ async function sendResumeAlert() {
 
 cron.schedule('* * * * *', async () => {
   try {
-    if (isDuringPauseWindow()) {
-      console.log('⏸️ Pause ZenScalp autour d’une annonce économique.');
-      return;
-    }
+    const pausedNow = isDuringPauseWindow();
+if (pausedNow && !isPaused) {
+  isPaused = true;
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  if (lastPauseMessage !== currentTime) await sendPauseAlert(currentTime);
+  return;
+}
+
+if (!pausedNow && isPaused) {
+  isPaused = false;
+  await sendResumeAlert();
+}
+if (isPaused) return;
+
 
     const candles = await fetchForexData();
     const lastCandle = candles.at(-1);
