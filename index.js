@@ -144,11 +144,11 @@ function analyze(data) {
 
   let signal = 'WAIT';
   if (bull >= 5) signal = 'STRONG BUY';
-  else if (bull >= 3) signal = 'GOOD BUY';
-  else if (bull >= 1) signal = 'WAIT TO BUY';
+  else if (bull >= 3 && bear === 0) signal = 'GOOD BUY';
+  else if (bull >= 1 && bear === 0) signal = 'WAIT TO BUY';
   else if (bear >= 5) signal = 'STRONG SELL';
-  else if (bear >= 3) signal = 'GOOD SELL';
-  else if (bear >= 1) signal = 'WAIT TO SELL';
+  else if (bear >= 3 && bull === 0) signal = 'GOOD SELL';
+  else if (bear >= 1 && bull === 0) signal = 'WAIT TO SELL';
 
   let trend = 'INDÉTERMINÉE';
   const above50 = latest.price > latest.ema50;
@@ -162,6 +162,7 @@ function analyze(data) {
 
   return { ...latest, signal, trend };
 }
+
 
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
