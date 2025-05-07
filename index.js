@@ -1,4 +1,4 @@
-// ZenScalp - gestion dynamique des annonces via formulaire
+// ZenScalp - Gestion dynamique des annonces via formulaire + correction signaux
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -19,7 +19,7 @@ const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
 
-const ANNOUNCEMENT_FILE = path.join(__dirname, 'announcements.json');
+const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
 function loadAnnouncementWindows() {
   try {
     return JSON.parse(fs.readFileSync(ANNOUNCEMENT_FILE, 'utf-8'));
