@@ -291,14 +291,53 @@ app.get('/indicateurs', (req, res) => {
 
 app.get('/annonces', (req, res) => {
   const annonces = loadAnnouncementWindows();
+  const rows = annonces.map(({ time }) => `
+    <tr>
+      <td><input type="time" name="times" value="${time}" required></td>
+      <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️ Supprimer</button></td>
+    </tr>`).join('');
+
   res.send(`
-    <html><body>
-    <h2>🗓️ Gestion des annonces économiques</h2>
-    <form action="/update-announcements" method="POST">
-      <textarea name="data" rows="15" cols="50">${JSON.stringify(annonces, null, 2)}</textarea><br><br>
-      <button type="submit">💾 Enregistrer</button>
-    </form>
-    </body></html>
+    <html>
+    <head>
+      <title>🗓️ Gestion des annonces économiques</title>
+      <style>
+        body { font-family: sans-serif; margin: 30px; background: #f4f4f4; }
+        table { border-collapse: collapse; margin-bottom: 10px; }
+        td { padding: 5px; }
+        input[type="time"] { padding: 5px; }
+        button { padding: 5px 10px; cursor: pointer; }
+      </style>
+    </head>
+    <body>
+      <h2>🗓️ Annonces économiques – heure de Paris</h2>
+      <form action="/update-announcements" method="POST" onsubmit="return collectTimes()">
+        <table id="timesTable">
+          ${rows}
+        </table>
+        <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
+        <input type="hidden" name="data" id="jsonData">
+        <button type="submit">💾 Enregistrer</button>
+      </form>
+      <script>
+        function addRow() {
+          const table = document.getElementById('timesTable');
+          const row = table.insertRow();
+          row.innerHTML = '<td><input type="time" name="times" required></td>' +
+                          '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️ Supprimer</button></td>';
+        }
+        function collectTimes() {
+          const inputs = document.getElementsByName('times');
+          const data = [];
+          for (const input of inputs) {
+            if (input.value) data.push({ time: input.value });
+          }
+          document.getElementById('jsonData').value = JSON.stringify(data, null, 2);
+          return true;
+        }
+      </script>
+    </body>
+    </html>
   `);
 });
 
