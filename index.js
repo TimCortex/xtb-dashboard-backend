@@ -1,4 +1,4 @@
-// ZenScalp - avec vérification du prix en temps réel avant envoi du signal
+// ZenScalp - avec vérification du prix en temps réel avant envoi du signal (modifié pour intégrer currentPrice dans l'analyse)
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -110,7 +110,7 @@ function generateWarning(price, signal, levels) {
   return '';
 }
 
-function analyze(data) {
+function analyze(data, currentPrice) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -125,7 +125,7 @@ function analyze(data) {
 
   const latest = {
     timestamp: new Date().toISOString(),
-    price: close.at(-1),
+    price: currentPrice,
     ema50: ema50.at(-1),
     ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
@@ -174,9 +174,9 @@ function analyze(data) {
 }
 
 async function getCurrentPrice() {
-  const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/last/trade/forex/C:EURUSD?apiKey=${POLYGON_API_KEY}`;
   const response = await axios.get(url);
-  return response.data?.last?.ask ?? null;
+  return response.data?.last?.price ?? null;
 }
 
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
@@ -234,8 +234,9 @@ cron.schedule('* * * * *', async () => {
 
     const candles = await fetchForexData();
     const lastCandle = candles.at(-1);
+    const currentPrice = await getCurrentPrice();
     const levels = detectLevels(candles);
-    const analysis = analyze(candles);
+    const analysis = analyze(candles, currentPrice);
     lastAnalysis = analysis;
     appendToCSV(analysis);
     const pattern = detectCandlePattern(lastCandle);
