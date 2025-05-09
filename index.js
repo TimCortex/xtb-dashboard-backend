@@ -114,7 +114,11 @@ async function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-  const ask = await getCurrentPrice(); // 🔁 prix réel
+  const ask = await getCurrentPrice();
+if (!ask) {
+  console.warn("⚠️ Prix actuel indisponible — analyse annulée");
+  return null;
+}
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
@@ -175,9 +179,14 @@ async function analyze(data) {
 }
 
 async function getCurrentPrice() {
-  const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
-  const response = await axios.get(url);
-  return response.data?.last?.ask ?? null;
+  try {
+    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+    const response = await axios.get(url);
+    return response.data?.last?.ask ?? null;
+  } catch (err) {
+    console.error("❌ Erreur getCurrentPrice :", err.message);
+    return null;
+  }
 }
 
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
@@ -237,7 +246,8 @@ cron.schedule('* * * * *', async () => {
     const lastCandle = candles.at(-1);
     const currentPrice = await getCurrentPrice();
     const levels = detectLevels(candles);
-    const analysis = analyze(candles, currentPrice);
+    const analysis = await analyze(candles);
+if (!analysis) return; // 🔁 Stopper si analyse impossible
     lastAnalysis = analysis;
     appendToCSV(analysis);
     const pattern = detectCandlePattern(lastCandle);
