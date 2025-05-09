@@ -175,8 +175,10 @@ function detectLevels(data) {
   };
 }
 
-function generateWarning(price, signal, levels) {
+function generateWarning(price, signal, levels, fvgList = []) {
   const proximity = price * 0.0005;
+
+  // Support/Résistance
   if (signal.includes('BUY')) {
     const nearRes = levels.resistance.find(r => Math.abs(r - price) <= proximity);
     if (nearRes) return `⚠️ Risque de retournement : prix proche résistance (${nearRes.toFixed(5)})`;
@@ -184,6 +186,14 @@ function generateWarning(price, signal, levels) {
     const nearSup = levels.support.find(s => Math.abs(s - price) <= proximity);
     if (nearSup) return `⚠️ Risque de retournement : prix proche support (${nearSup.toFixed(5)})`;
   }
+
+  // Proximité d'un FVG
+  for (const fvg of fvgList) {
+    if (price >= fvg.gapLow - proximity && price <= fvg.gapHigh + proximity) {
+      return `⚠️ Proximité d'une zone FVG (${fvg.type === 'bullish' ? '⬆️ haussière' : '⬇️ baissière'})`;
+    }
+  }
+
   return '';
 }
 
@@ -280,13 +290,14 @@ async function getCurrentPrice() {
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const currentPrice = await getCurrentPrice();
-  const warning = generateWarning(currentPrice, analysis.signal, levels);
+  //const warning = generateWarning(currentPrice, analysis.signal, levels);
 
   const candles = await fetchForexData(); // ⚠️ Nécessaire pour détecter les FVG
   const fvgList = detectFVGs(candles);
+const warning = generateWarning(currentPrice, analysis.signal, levels, fvgList);
   const formattedFVGs = fvgList.map(fvg =>
-    `${fvg.direction === 'up' ? '⬆️' : '⬇️'} ${fvg.low.toFixed(5)} → ${fvg.high.toFixed(5)}`
-  ).join('\n');
+  `${fvg.type === 'bullish' ? '⬆️' : '⬇️'} ${fvg.gapLow.toFixed(5)} → ${fvg.gapHigh.toFixed(5)}`
+).join('\n');
 
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix réel (ask): ${currentPrice?.toFixed(5) ?? 'non dispo'}\n`
