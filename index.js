@@ -1,4 +1,4 @@
-// ZenScalp - Notification des pauses dans Discord
+// ZenScalp - 2 types of strong signals
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -8,7 +8,6 @@ const path = require('path');
 const bodyParser = require('body-parser');
 let isPaused = false;
 let lastPauseMessage = null;
-
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -36,9 +35,8 @@ function saveAnnouncementWindows(data) {
 }
 function isDuringPauseWindow() {
   const now = new Date();
-  const offset = 2 * 60; // UTC+2 pour CEST (été) ou UTC+1 pour CET (hiver)
+  const offset = 2 * 60;
   const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + offset;
-
   const windows = loadAnnouncementWindows();
   return windows.some(({ time }) => {
     const [h, m] = time.split(':').map(Number);
@@ -53,7 +51,6 @@ function detectCandlePattern(candle) {
   const upperWick = candle.h - Math.max(candle.c, candle.o);
   const lowerWick = Math.min(candle.c, candle.o) - candle.l;
   const bodyPct = body / range;
-
   if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) {
     return candle.c < candle.o ? '🟥 Marubozu baissière — forte pression vendeuse' : '🟩 Marubozu haussière — forte pression acheteuse';
   }
@@ -118,8 +115,6 @@ function analyze(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
 
-  const ema9 = technicalIndicators.EMA.calculate({ period: 9, values: close });
-  const ema21 = technicalIndicators.EMA.calculate({ period: 21, values: close });
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
   const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: close });
@@ -149,69 +144,57 @@ function analyze(data) {
 
   let signal = 'WAIT';
   if (bull >= 5) signal = 'STRONG BUY';
-else if (bull >= 3 && bear <= 1) signal = 'GOOD BUY';
-else if (bull >= 1 && bear <= 2) signal = 'WAIT TO BUY';
-
-if (bear >= 5) signal = 'STRONG SELL';
-else if (bear >= 3 && bull <= 1) signal = 'GOOD SELL';
-else if (bear >= 1 && bull <= 2) signal = 'WAIT TO SELL';
-
+  else if (bull >= 3 && bear <= 1) signal = 'GOOD BUY';
+  else if (bull >= 1 && bear <= 2) signal = 'WAIT TO BUY';
+  else if (bear >= 5) signal = 'STRONG SELL';
+  else if (bear >= 3 && bull <= 1) signal = 'GOOD SELL';
+  else if (bear >= 1 && bull <= 2) signal = 'WAIT TO SELL';
 
   let trend = 'INDÉTERMINÉE';
-  const above50 = latest.price > latest.ema50;
-  const above100 = latest.price > latest.ema100;
-  if (above50 && above100) trend = 'HAUSSIÈRE';
-  else if (!above50 && !above100) trend = 'BAISSIÈRE';
-
-  if (trend === 'INDÉTERMINÉE' && (signal === 'GOOD BUY' || signal === 'GOOD SELL')) {
+  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
+  else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+  if (trend === 'INDÉTERMINÉE' && signal.includes('GOOD')) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
- // 🔍 Détection d’un range étroit sur les 20 dernières bougies
-const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
-const rangeThreshold = 0.0010; // 10 pips
-const isRanging = recentRange < rangeThreshold;
+  const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
+  const rangeThreshold = 0.0010;
+  const isRanging = recentRange < rangeThreshold;
+  if (isRanging && signal.includes('STRONG') || signal.includes('GOOD')) {
+    signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
+  }
 
-// ❌ Suppression des signaux forts dans un range
-if (isRanging) {
-  if (signal === 'STRONG BUY' || signal === 'GOOD BUY') signal = 'WAIT TO BUY';
-  else if (signal === 'STRONG SELL' || signal === 'GOOD SELL') signal = 'WAIT TO SELL';
+  const last4 = close.slice(-4);
+  const netChange = last4[3] - last4[0];
+  const totalMove = Math.abs(last4[1] - last4[0]) + Math.abs(last4[2] - last4[1]) + Math.abs(last4[3] - last4[2]);
+  const momentum = Math.abs(netChange / totalMove);
+  const momentumSignal = momentum > 0.75 ? (netChange > 0 ? 'STRONG BUY (réactif)' : 'STRONG SELL (réactif)') : null;
+
+  return { ...latest, signal, trend, recentRange, momentumSignal };
 }
-
-
-return { ...latest, signal, trend, recentRange };
-
-}
-
 
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
-
-  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 Prix: ${analysis.price}\n`
-    + `📊 Tendance: ${analysis.trend}\n`
-    + `${warning ? warning + '\n' : ''}${pattern ? pattern + '\n' : ''}`;
-
-  if (analysis.recentRange && analysis.recentRange < 0.0010) {
-    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
-  }
-
+  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`;
+  if (analysis.momentumSignal) msg += `🔥 **${analysis.momentumSignal}**\n`;
+  msg += `💰 Prix: ${analysis.price}\n📊 Tendance: ${analysis.trend}\n`;
+  if (warning) msg += warning + '\n';
+  if (pattern) msg += pattern + '\n';
+  if (analysis.recentRange < 0.0010) msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
   await axios.post(WEBHOOK_URL, { content: msg });
 }
-
 
 function getParisTimeString() {
   const now = new Date();
-  const offset = 2; // CEST = UTC+2, passe à 1 pour l’hiver (CET)
-  now.setHours(now.getHours() + offset);
+  now.setHours(now.getHours() + 2);
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
-async function sendPauseAlert(nextTime) {
+async function sendPauseAlert(time) {
   const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue à ${getParisTimeString()}\nLes analyses sont suspendues temporairement.`;
   console.log(msg);
   await axios.post(WEBHOOK_URL, { content: msg });
-  lastPauseMessage = nextTime;
+  lastPauseMessage = time;
 }
 
 async function sendResumeAlert() {
@@ -221,24 +204,21 @@ async function sendResumeAlert() {
   lastPauseMessage = null;
 }
 
-
 cron.schedule('* * * * *', async () => {
   try {
     const pausedNow = isDuringPauseWindow();
-if (pausedNow && !isPaused) {
-  isPaused = true;
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  if (lastPauseMessage !== currentTime) await sendPauseAlert(currentTime);
-  return;
-}
-
-if (!pausedNow && isPaused) {
-  isPaused = false;
-  await sendResumeAlert();
-}
-if (isPaused) return;
-
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    if (pausedNow && !isPaused) {
+      isPaused = true;
+      if (lastPauseMessage !== currentTime) await sendPauseAlert(currentTime);
+      return;
+    }
+    if (!pausedNow && isPaused) {
+      isPaused = false;
+      await sendResumeAlert();
+    }
+    if (isPaused) return;
 
     const candles = await fetchForexData();
     const lastCandle = candles.at(-1);
@@ -246,13 +226,9 @@ if (isPaused) return;
     const analysis = analyze(candles);
     lastAnalysis = analysis;
     appendToCSV(analysis);
-
     const pattern = detectCandlePattern(lastCandle);
-
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
-
     await sendDiscordAlert(analysis, levels, pattern);
-
   } catch (err) {
     console.error('Erreur Cron :', err.message);
   }
