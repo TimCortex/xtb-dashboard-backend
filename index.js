@@ -34,20 +34,18 @@ function saveAnnouncementWindows(data) {
   fs.writeFileSync(ANNOUNCEMENT_FILE, JSON.stringify(data, null, 2));
 }
 function isDuringPauseWindow() {
-  const now = new Date();
-  const currentUTCMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const nowUTC = new Date();
+
+  // Convertir UTC → heure de Paris (CET/CEST automatiquement)
+  const nowParis = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+  const currentParisMinutes = nowParis.getHours() * 60 + nowParis.getMinutes();
 
   const windows = loadAnnouncementWindows();
   return windows.some(({ time }) => {
-    const [localHour, localMinute] = time.split(':').map(Number);
-    const localDate = new Date();
-    localDate.setHours(localHour, localMinute, 0, 0);
+    const [h, m] = time.split(':').map(Number);
+    const scheduledMinutes = h * 60 + m;
 
-    const utcHour = localDate.getUTCHours();
-    const utcMinute = localDate.getUTCMinutes();
-    const scheduledUTC = utcHour * 60 + utcMinute;
-
-    return Math.abs(currentUTCMinutes - scheduledUTC) <= 15;
+    return Math.abs(currentParisMinutes - scheduledMinutes) <= 15;
   });
 }
 
