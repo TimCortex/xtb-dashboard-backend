@@ -1,4 +1,4 @@
-// ZenScalp - 2 types of strong signals
+// ZenScalp - avec vérification du prix en temps réel avant envoi du signal
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -173,14 +173,26 @@ function analyze(data) {
   return { ...latest, signal, trend, recentRange, momentumSignal };
 }
 
+async function getCurrentPrice() {
+  const url = `https://api.polygon.io/v2/last/forex/EURUSD?apiKey=${POLYGON_API_KEY}`;
+  const response = await axios.get(url);
+  return response.data.last.price;
+}
+
+// Modification de la fonction d'envoi du signal pour inclure le prix actuel
 async function sendDiscordAlert(analysis, levels, pattern = null) {
-  const warning = generateWarning(analysis.price, analysis.signal, levels);
-  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`;
-  if (analysis.momentumSignal) msg += `🔥 **${analysis.momentumSignal}**\n`;
-  msg += `💰 Prix: ${analysis.price}\n📊 Tendance: ${analysis.trend}\n`;
-  if (warning) msg += warning + '\n';
-  if (pattern) msg += pattern + '\n';
-  if (analysis.recentRange < 0.0010) msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
+  const currentPrice = await getCurrentPrice();
+  const warning = generateWarning(currentPrice, analysis.signal, levels);
+
+  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
+    + `💰 Prix actuel: ${currentPrice}\n`
+    + `📊 Tendance: ${analysis.trend}\n`
+    + `${warning ? warning + '\n' : ''}${pattern ? pattern + '\n' : ''}`;
+
+  if (analysis.recentRange && analysis.recentRange < 0.0010) {
+    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
+  }
+
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
