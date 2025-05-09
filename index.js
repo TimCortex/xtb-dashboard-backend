@@ -1,4 +1,4 @@
-// ZenScalp - avec vérification du prix en temps réel avant envoi du signal (modifié pour intégrer currentPrice dans l'analyse)
+// ZenScalp - avec prix réel intégré à l’analyse et ajustements
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -35,13 +35,19 @@ function saveAnnouncementWindows(data) {
 }
 function isDuringPauseWindow() {
   const now = new Date();
-  const offset = 2 * 60;
-  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes() + offset;
+  const currentUTCMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+
   const windows = loadAnnouncementWindows();
   return windows.some(({ time }) => {
-    const [h, m] = time.split(':').map(Number);
-    const scheduled = h * 60 + m;
-    return Math.abs(currentMinutes - scheduled) <= 15;
+    const [localHour, localMinute] = time.split(':').map(Number);
+    const localDate = new Date();
+    localDate.setHours(localHour, localMinute, 0, 0);
+
+    const utcHour = localDate.getUTCHours();
+    const utcMinute = localDate.getUTCMinutes();
+    const scheduledUTC = utcHour * 60 + utcMinute;
+
+    return Math.abs(currentUTCMinutes - scheduledUTC) <= 15;
   });
 }
 
@@ -66,8 +72,6 @@ function detectCandlePattern(candle) {
   return null;
 }
 
-let lastSignal = 'WAIT';
-let lastNotificationSignal = null;
 let lastAnalysis = null;
 
 async function fetchForexData() {
@@ -75,6 +79,17 @@ async function fetchForexData() {
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
   return data.results.reverse();
+}
+
+async function getCurrentPrice() {
+  try {
+    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+    const response = await axios.get(url);
+    return response.data?.last?.ask ?? null;
+  } catch (err) {
+    console.error("❌ Erreur getCurrentPrice :", err.message);
+    return null;
+  }
 }
 
 function detectLevels(data) {
@@ -88,14 +103,6 @@ function detectLevels(data) {
     support: supports.length ? supports.sort((a, b) => b - a).slice(-2) : [],
     resistance: resistances.length ? resistances.sort((a, b) => b - a).slice(0, 2) : []
   };
-}
-
-function calculateIchimoku(data) {
-  const high = data.map(c => c.h);
-  const low = data.map(c => c.l);
-  const conv = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
-  const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
-  return { conversion: conv, base };
 }
 
 function generateWarning(price, signal, levels) {
@@ -115,10 +122,10 @@ async function analyze(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
   const ask = await getCurrentPrice();
-if (!ask) {
-  console.warn("⚠️ Prix actuel indisponible — analyse annulée");
-  return null;
-}
+  if (!ask) {
+    console.warn("⚠️ Prix actuel indisponible — analyse annulée");
+    return null;
+  }
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
@@ -130,7 +137,7 @@ if (!ask) {
 
   const latest = {
     timestamp: new Date().toISOString(),
-    price: ask, // ✅ ici on injecte le prix réel
+    price: ask,
     ema50: ema50.at(-1),
     ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
@@ -165,15 +172,19 @@ if (!ask) {
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
   const rangeThreshold = 0.0010;
   const isRanging = recentRange < rangeThreshold;
-  if (isRanging && signal.includes('STRONG') || signal.includes('GOOD')) {
+  if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
   const last4 = close.slice(-4);
   const netChange = last4[3] - last4[0];
   const totalMove = Math.abs(last4[1] - last4[0]) + Math.abs(last4[2] - last4[1]) + Math.abs(last4[3] - last4[2]);
-  const momentum = Math.abs(netChange / totalMove);
+  const momentum = totalMove !== 0 ? Math.abs(netChange / totalMove) : 0;
   const momentumSignal = momentum > 0.75 ? (netChange > 0 ? 'STRONG BUY (réactif)' : 'STRONG SELL (réactif)') : null;
+
+  if (momentumSignal && signal.startsWith('WAIT')) {
+    signal = momentumSignal;
+  }
 
   return { ...latest, signal, trend, recentRange, momentumSignal };
 }
