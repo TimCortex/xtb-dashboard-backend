@@ -117,6 +117,13 @@ function generateWarning(price, signal, levels) {
   return '';
 }
 
+function calculateIchimoku(data) {
+  const high = data.map(c => c.h);
+  const low = data.map(c => c.l);
+  const conv = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
+  const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
+  return { conversion: conv, base };
+}
 async function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
