@@ -108,6 +108,40 @@ function detectMultiCandlePattern(candles) {
   return null;
 }
 
+function detectFVGs(data) {
+  const fvgZones = [];
+
+  for (let i = Math.max(2, data.length - 30); i < data.length; i++) {
+    const prev2 = data[i - 2];
+    const prev1 = data[i - 1];
+    const curr = data[i];
+
+    // FVG haussier : le plus bas actuel est au-dessus du plus haut d’il y a 2 bougies
+    if (curr.l > prev2.h) {
+      fvgZones.push({
+        type: 'bullish',
+        gapHigh: prev2.h,
+        gapLow: curr.l,
+        index: i,
+        time: new Date(curr.t).toLocaleTimeString()
+      });
+    }
+
+    // FVG baissier : le plus haut actuel est en dessous du plus bas d’il y a 2 bougies
+    if (curr.h < prev2.l) {
+      fvgZones.push({
+        type: 'bearish',
+        gapHigh: curr.h,
+        gapLow: prev2.l,
+        index: i,
+        time: new Date(curr.t).toLocaleTimeString()
+      });
+    }
+  }
+
+  return fvgZones;
+}
+
 let lastAnalysis = null;
 
 async function fetchForexData() {
@@ -248,10 +282,22 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   const currentPrice = await getCurrentPrice();
   const warning = generateWarning(currentPrice, analysis.signal, levels);
 
+  const candles = await fetchForexData(); // ⚠️ Nécessaire pour détecter les FVG
+  const fvgList = detectFVGs(candles);
+  const formattedFVGs = fvgList.map(fvg =>
+    `${fvg.direction === 'up' ? '⬆️' : '⬇️'} ${fvg.low.toFixed(5)} → ${fvg.high.toFixed(5)}`
+  ).join('\n');
+
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
     + `💰 Prix réel (ask): ${currentPrice?.toFixed(5) ?? 'non dispo'}\n`
-    + `📊 Tendance: ${analysis.trend}\n`
-    + `${warning ? warning + '\n' : ''}${pattern ? pattern + '\n' : ''}`;
+    + `📊 Tendance: ${analysis.trend}\n`;
+
+  if (formattedFVGs) {
+    msg += `📐 FVG détectés :\n${formattedFVGs}\n`;
+  }
+
+  if (warning) msg += warning + '\n';
+  if (pattern) msg += pattern + '\n';
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
     msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
