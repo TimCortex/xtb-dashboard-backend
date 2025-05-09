@@ -229,7 +229,7 @@ function getParisTimeString() {
 }
 
 async function sendPauseAlert(time) {
-  const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue à ${getParisTimeString()}\nLes analyses sont suspendues temporairement.`;
+  const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue \nLes analyses sont suspendues temporairement.`;
   console.log(msg);
   await axios.post(WEBHOOK_URL, { content: msg });
   lastPauseMessage = time;
