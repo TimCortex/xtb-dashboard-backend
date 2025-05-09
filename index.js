@@ -70,6 +70,44 @@ function detectCandlePattern(candle) {
   return null;
 }
 
+function detectMultiCandlePattern(candles) {
+  if (!candles || candles.length < 4) return null;
+
+  const [c1, c2, c3, c4] = candles.slice(-4);
+
+  // Avalement haussier
+  if (c3.c < c3.o && c4.c > c4.o && c4.c > c3.o && c4.o < c3.c) {
+    return '🟩 Avalement haussier — possible retournement à la hausse';
+  }
+
+  // Avalement baissier
+  if (c3.c > c3.o && c4.c < c4.o && c4.c < c3.o && c4.o > c3.c) {
+    return '🟥 Avalement baissier — possible retournement à la baisse';
+  }
+
+  // Trois soldats blancs
+  if ([c2, c3, c4].every(c => c.c > c.o)) {
+    return '🟩 Trois soldats blancs — continuation haussière forte';
+  }
+
+  // Trois corbeaux noirs
+  if ([c2, c3, c4].every(c => c.c < c.o)) {
+    return '🟥 Trois corbeaux noirs — continuation baissière forte';
+  }
+
+  // Harami haussier
+  if (c3.c < c3.o && c4.c > c4.o && c4.o > c3.c && c4.c < c3.o) {
+    return '🔄 Harami haussier — possible retournement';
+  }
+
+  // Harami baissier
+  if (c3.c > c3.o && c4.c < c4.o && c4.o < c3.c && c4.c > c3.o) {
+    return '🔄 Harami baissier — possible retournement';
+  }
+
+  return null;
+}
+
 let lastAnalysis = null;
 
 async function fetchForexData() {
@@ -266,7 +304,8 @@ cron.schedule('* * * * *', async () => {
 if (!analysis) return; // 🔁 Stopper si analyse impossible
     lastAnalysis = analysis;
     appendToCSV(analysis);
-    const pattern = detectCandlePattern(lastCandle);
+    const recentCandles = candles.slice(-4);
+const pattern = detectMultiCandlePattern(recentCandles);
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
     await sendDiscordAlert(analysis, levels, pattern);
   } catch (err) {
