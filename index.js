@@ -341,6 +341,15 @@ app.get('/annonces', (req, res) => {
   `);
 });
 
+app.get('/debug-annonces', (req, res) => {
+  try {
+    const data = loadAnnouncementWindows();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Impossible de charger les annonces', details: err.message });
+  }
+});
+
 app.post('/update-announcements', (req, res) => {
   try {
     const jsonData = JSON.parse(req.body.data);
