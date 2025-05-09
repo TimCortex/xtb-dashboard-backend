@@ -110,10 +110,11 @@ function generateWarning(price, signal, levels) {
   return '';
 }
 
-function analyze(data, currentPrice) {
+async function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
+  const ask = await getCurrentPrice(); // 🔁 prix réel
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
@@ -125,7 +126,7 @@ function analyze(data, currentPrice) {
 
   const latest = {
     timestamp: new Date().toISOString(),
-    price: currentPrice,
+    price: ask, // ✅ ici on injecte le prix réel
     ema50: ema50.at(-1),
     ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
@@ -174,9 +175,9 @@ function analyze(data, currentPrice) {
 }
 
 async function getCurrentPrice() {
-  const url = `https://api.polygon.io/v1/last/forex/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
   const response = await axios.get(url);
-  return response.data?.last?.bid ?? response.data?.last?.price ?? null;
+  return response.data?.last?.ask ?? null;
 }
 
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
@@ -185,7 +186,7 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(currentPrice, analysis.signal, levels);
 
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 Prix actuel: ${currentPrice}\n`
+    + `💰 Prix réel (ask): ${currentPrice?.toFixed(5) ?? 'non dispo'}\n`
     + `📊 Tendance: ${analysis.trend}\n`
     + `${warning ? warning + '\n' : ''}${pattern ? pattern + '\n' : ''}`;
 
