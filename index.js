@@ -174,9 +174,9 @@ function analyze(data) {
 }
 
 async function getCurrentPrice() {
-  const url = `https://api.polygon.io/v2/last/forex/EURUSD?apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/last/trade/forex/C:EURUSD?apiKey=${POLYGON_API_KEY}`;
   const response = await axios.get(url);
-  return response.data.last.price;
+  return response.data?.last?.price ?? null;
 }
 
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
