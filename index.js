@@ -304,6 +304,7 @@ function analyze(data) {
 
 
 
+
 async function getCurrentPrice() {
   try {
     const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
