@@ -1,4 +1,4 @@
-// ZenScalp - avec prix réel intégré à l’analyse et ajustements
+// ZenScalp - Logique pondérée
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -204,15 +204,10 @@ function calculateIchimoku(data) {
   const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
   return { conversion: conv, base };
 }
-async function analyze(data) {
+function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-  const ask = await getCurrentPrice();
-  if (!ask) {
-    console.warn("⚠️ Prix actuel indisponible — analyse annulée");
-    return null;
-  }
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
@@ -222,18 +217,21 @@ async function analyze(data) {
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
+  const price = close.at(-1);
+
   const latest = {
     timestamp: new Date().toISOString(),
-    price: ask,
+    price,
     ema50: ema50.at(-1),
     ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
     macd: macd.length ? macd.at(-1) : { histogram: null },
     stoch: stoch.length ? stoch.at(-1) : { k: 0, d: 0 },
-    sar: sar.length ? sar.at(-1) : close.at(-1),
+    sar: sar.length ? sar.at(-1) : price,
     ichimoku
   };
 
+  // 🔢 Score technique
   let bull = 0, bear = 0;
   if (latest.rsi14 > 50) bull++; else if (latest.rsi14 < 50) bear++;
   if (latest.macd?.histogram > 0) bull++; else if (latest.macd?.histogram < 0) bear++;
@@ -241,6 +239,7 @@ async function analyze(data) {
   if (latest.sar < latest.price) bull++; else if (latest.sar > latest.price) bear++;
   if (latest.ichimoku?.conversion > latest.ichimoku?.base) bull++; else if (latest.ichimoku?.conversion < latest.ichimoku?.base) bear++;
 
+  // 📢 Signal brut
   let signal = 'WAIT';
   if (bull >= 5) signal = 'STRONG BUY';
   else if (bull >= 3 && bear <= 1) signal = 'GOOD BUY';
@@ -249,20 +248,26 @@ async function analyze(data) {
   else if (bear >= 3 && bull <= 1) signal = 'GOOD SELL';
   else if (bear >= 1 && bull <= 2) signal = 'WAIT TO SELL';
 
+  // 📈 Tendance de fond
   let trend = 'INDÉTERMINÉE';
-  if (latest.price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
-  else if (latest.price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+  if (price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
+  else if (price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+
+  // 🔧 Ajustement si tendance floue
   if (trend === 'INDÉTERMINÉE' && signal.includes('GOOD')) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
+  // 📉 Ranging Market
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
   const rangeThreshold = 0.0010;
   const isRanging = recentRange < rangeThreshold;
+
   if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
+  // ⚡ Momentum sur 4 bougies
   const last4 = close.slice(-4);
   const netChange = last4[3] - last4[0];
   const totalMove = Math.abs(last4[1] - last4[0]) + Math.abs(last4[2] - last4[1]) + Math.abs(last4[3] - last4[2]);
@@ -273,7 +278,15 @@ async function analyze(data) {
     signal = momentumSignal;
   }
 
-  return { ...latest, signal, trend, recentRange, momentumSignal };
+  return {
+    ...latest,
+    signal,
+    trend,
+    recentRange,
+    momentumSignal,
+    bullScore: bull,
+    bearScore: bear
+  };
 }
 
 async function getCurrentPrice() {
@@ -289,33 +302,24 @@ async function getCurrentPrice() {
 
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
 async function sendDiscordAlert(analysis, levels, pattern = null) {
-  const currentPrice = await getCurrentPrice();
-  //const warning = generateWarning(currentPrice, analysis.signal, levels);
-
-  const candles = await fetchForexData(); // ⚠️ Nécessaire pour détecter les FVG
-  const fvgList = detectFVGs(candles);
-const warning = generateWarning(currentPrice, analysis.signal, levels, fvgList);
-  const formattedFVGs = fvgList.map(fvg =>
-  `${fvg.type === 'bullish' ? '⬆️' : '⬇️'} ${fvg.gapLow.toFixed(5)} → ${fvg.gapHigh.toFixed(5)}`
-).join('\n');
+  const price = analysis.price;
+  const warning = generateWarning(price, analysis.signal, levels);
 
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 Prix réel (ask): ${currentPrice?.toFixed(5) ?? 'non dispo'}\n`
-    + `📊 Tendance: ${analysis.trend}\n`;
+    + `💰 Prix actuel : ${price.toFixed(5)}\n`
+    + `📊 Tendance : ${analysis.trend}\n`
+    + `🧮 Score Bull : ${analysis.bullScore} / Bear : ${analysis.bearScore}\n`;
 
-  if (formattedFVGs) {
-    msg += `📐 FVG détectés :\n${formattedFVGs}\n`;
-  }
-
-  if (warning) msg += warning + '\n';
-  if (pattern) msg += pattern + '\n';
+  if (warning) msg += `${warning}\n`;
+  if (pattern) msg += `${pattern}\n`;
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
-    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips – signal atténué.`;
+    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips — signal atténué\n`;
   }
 
   await axios.post(WEBHOOK_URL, { content: msg });
 }
+
 
 function getParisTimeString() {
   const now = new Date();
