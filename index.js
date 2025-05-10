@@ -319,13 +319,13 @@ async function getCurrentPrice() {
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
 
-  let msg = `📡 **Signal détecté :** ${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
+  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
           + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
           + `📊 **Tendance :** ${analysis.trend}\n`
-          + `🎯 **Score total :** ${analysis.totalScore}/10 (🐂 ${analysis.bullPoints} / 🐻 ${analysis.bearPoints})\n`;
+          + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`;
 
-  if (warning) msg += `⚠️ ${warning}\n`;
-  if (pattern) msg += `🕯️ **Pattern détecté :** ${pattern}\n`;
+  if (warning) msg += `${warning}\n`;
+  if (pattern) msg += `${pattern}\n`;
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
     msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
