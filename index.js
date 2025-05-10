@@ -213,56 +213,68 @@ function analyze(data) {
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
-  const rsi14 = technicalIndicators.RSI.calculate({ period: 14, values: close });
+  const adx = technicalIndicators.ADX.calculate({ close, high, low, period: 14 });
+  const rsi = technicalIndicators.RSI.calculate({ period: 14, values: close });
   const macd = technicalIndicators.MACD.calculate({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
   const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 14, signalPeriod: 3 });
+  const williamsR = technicalIndicators.WilliamsR.calculate({ high, low, close, period: 14 });
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
-  const latest = {
-    timestamp: new Date().toISOString(),
-    price: close.at(-1),
-    ema50: ema50.at(-1),
-    ema100: ema100.at(-1),
-    rsi14: rsi14.at(-1),
-    macd: macd.length ? macd.at(-1) : { histogram: null },
-    stoch: stoch.length ? stoch.at(-1) : { k: 0, d: 0 },
-    sar: sar.length ? sar.at(-1) : close.at(-1),
-    ichimoku
-  };
+  const price = close.at(-1);
+  const ema50Val = ema50.at(-1);
+  const ema100Val = ema100.at(-1);
+  const adxVal = adx.at(-1)?.adx;
+  const rsiVal = rsi.at(-1);
+  const macdHist = macd.at(-1)?.histogram;
+  const stochVal = stoch.at(-1);
+  const williamsRVal = williamsR.at(-1);
+  const sarVal = sar.at(-1);
+  const ichimokuConv = ichimoku?.conversion;
+  const ichimokuBase = ichimoku?.base;
 
-  // 🧠 Analyse des indicateurs
   let bull = 0, bear = 0;
-  if (latest.rsi14 > 50) bull++; else if (latest.rsi14 < 50) bear++;
-  if (latest.macd?.histogram > 0) bull++; else if (latest.macd?.histogram < 0) bear++;
-  if (latest.stoch?.k > latest.stoch?.d) bull++; else if (latest.stoch?.k < latest.stoch?.d) bear++;
-  if (latest.sar < latest.price) bull++; else if (latest.sar > latest.price) bear++;
-  if (latest.ichimoku?.conversion > latest.ichimoku?.base) bull++; else if (latest.ichimoku?.conversion < latest.ichimoku?.base) bear++;
 
-  // 🔁 Construction du signal pondéré (score à utiliser en aval)
-  const score = bull - bear;
+  // Tendance & dynamique (3 pts)
+  if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
+  if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
+  if (ichimokuConv > ichimokuBase) bull++; else if (ichimokuConv < ichimokuBase) bear++;
 
+  // Momentum & oscillateurs (4 pts)
+  if (rsiVal > 50) bull++; else if (rsiVal < 50) bear++;
+  if (macdHist > 0) bull++; else if (macdHist < 0) bear++;
+  if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
+  if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
+
+  // Price Action (3 pts)
+  if (sarVal < price) bull++; else if (sarVal > price) bear++;
+  const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
+  const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
+  if (structureBull) bull++; else if (structureBear) bear++;
+
+  let patternScore = 0;
+  const last = data.at(-1);
+  const body = Math.abs(last.c - last.o);
+  const range = last.h - last.l;
+  const upperWick = last.h - Math.max(last.c, last.o);
+  const lowerWick = Math.min(last.c, last.o) - last.l;
+  const bodyPct = body / range;
+  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) patternScore = last.c > last.o ? 1 : -1; // Marubozu
+  else if (upperWick > body * 2) patternScore = -1; // Shooting Star
+  else if (lowerWick > body * 2) patternScore = 1; // Hammer
+
+  if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
+
+  const totalScore = bull + bear;
   let signal = 'WAIT';
-  if (score >= 5) signal = 'STRONG BUY';
-  else if (score >= 3) signal = 'GOOD BUY';
-  else if (score >= 1) signal = 'WAIT TO BUY';
-  else if (score <= -5) signal = 'STRONG SELL';
-  else if (score <= -3) signal = 'GOOD SELL';
-  else if (score <= -1) signal = 'WAIT TO SELL';
+  if (bull >= 8) signal = 'STRONG BUY';
+  else if (bull >= 6) signal = 'GOOD BUY';
+  else if (bull >= 4) signal = 'WAIT TO BUY';
+  else if (bear >= 8) signal = 'STRONG SELL';
+  else if (bear >= 6) signal = 'GOOD SELL';
+  else if (bear >= 4) signal = 'WAIT TO SELL';
 
-  // 🧭 Détection de la tendance
-  let trend = 'INDÉTERMINÉE';
-  const above50 = latest.price > latest.ema50;
-  const above100 = latest.price > latest.ema100;
-  if (above50 && above100) trend = 'HAUSSIÈRE';
-  else if (!above50 && !above100) trend = 'BAISSIÈRE';
-
-  // ❌ Ajustement si la tendance est floue mais signal trop optimiste
-  if (trend === 'INDÉTERMINÉE' && (signal.includes('GOOD') || signal.includes('STRONG'))) {
-    signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
-  }
-
-  // 📉 Range étroit
+  // Range Check
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
   const isRanging = recentRange < 0.0010;
   if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
@@ -270,13 +282,26 @@ function analyze(data) {
   }
 
   return {
-    ...latest,
-    score,
+    timestamp: new Date().toISOString(),
+    price,
     signal,
-    trend,
+    trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE' : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE' : 'INDÉTERMINÉE',
+    rsi14: rsiVal,
+    macd: macd.at(-1),
+    stoch: stochVal,
+    williamsR: williamsRVal,
+    sar: sarVal,
+    ema50: ema50Val,
+    ema100: ema100Val,
+    adx: adxVal,
+    ichimoku,
+    bullPoints: bull,
+    bearPoints: bear,
+    totalScore,
     recentRange
   };
 }
+
 
 
 async function getCurrentPrice() {
@@ -292,19 +317,18 @@ async function getCurrentPrice() {
 
 // Modification de la fonction d'envoi du signal pour inclure le prix actuel
 async function sendDiscordAlert(analysis, levels, pattern = null) {
-  const price = analysis.price;
-  const warning = generateWarning(price, analysis.signal, levels);
+  const warning = generateWarning(analysis.price, analysis.signal, levels);
 
-  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 Prix actuel : ${price.toFixed(5)}\n`
-    + `📊 Tendance : ${analysis.trend}\n`
-    + `🧮 Score Bull : ${analysis.bullScore} / Bear : ${analysis.bearScore}\n`;
+  let msg = `📡 **Signal détecté :** ${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
+          + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
+          + `📊 **Tendance :** ${analysis.trend}\n`
+          + `🎯 **Score total :** ${analysis.totalScore}/10 (🐂 ${analysis.bullPoints} / 🐻 ${analysis.bearPoints})\n`;
 
-  if (warning) msg += `${warning}\n`;
-  if (pattern) msg += `${pattern}\n`;
+  if (warning) msg += `⚠️ ${warning}\n`;
+  if (pattern) msg += `🕯️ **Pattern détecté :** ${pattern}\n`;
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
-    msg += `⚠️ Zone de range étroit détectée : ~${(analysis.recentRange / 0.0001).toFixed(1)} pips — signal atténué\n`;
+    msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
   }
 
   await axios.post(WEBHOOK_URL, { content: msg });
