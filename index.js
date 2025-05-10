@@ -204,6 +204,8 @@ function calculateIchimoku(data) {
   const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
   return { conversion: conv, base };
 }
+
+
 function analyze(data) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -217,21 +219,19 @@ function analyze(data) {
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
-  const price = close.at(-1);
-
   const latest = {
     timestamp: new Date().toISOString(),
-    price,
+    price: close.at(-1),
     ema50: ema50.at(-1),
     ema100: ema100.at(-1),
     rsi14: rsi14.at(-1),
     macd: macd.length ? macd.at(-1) : { histogram: null },
     stoch: stoch.length ? stoch.at(-1) : { k: 0, d: 0 },
-    sar: sar.length ? sar.at(-1) : price,
+    sar: sar.length ? sar.at(-1) : close.at(-1),
     ichimoku
   };
 
-  // 🔢 Score technique
+  // 🧠 Analyse des indicateurs
   let bull = 0, bear = 0;
   if (latest.rsi14 > 50) bull++; else if (latest.rsi14 < 50) bear++;
   if (latest.macd?.histogram > 0) bull++; else if (latest.macd?.histogram < 0) bear++;
@@ -239,55 +239,45 @@ function analyze(data) {
   if (latest.sar < latest.price) bull++; else if (latest.sar > latest.price) bear++;
   if (latest.ichimoku?.conversion > latest.ichimoku?.base) bull++; else if (latest.ichimoku?.conversion < latest.ichimoku?.base) bear++;
 
-  // 📢 Signal brut
+  // 🔁 Construction du signal pondéré (score à utiliser en aval)
+  const score = bull - bear;
+
   let signal = 'WAIT';
-  if (bull >= 5) signal = 'STRONG BUY';
-  else if (bull >= 3 && bear <= 1) signal = 'GOOD BUY';
-  else if (bull >= 1 && bear <= 2) signal = 'WAIT TO BUY';
-  else if (bear >= 5) signal = 'STRONG SELL';
-  else if (bear >= 3 && bull <= 1) signal = 'GOOD SELL';
-  else if (bear >= 1 && bull <= 2) signal = 'WAIT TO SELL';
+  if (score >= 5) signal = 'STRONG BUY';
+  else if (score >= 3) signal = 'GOOD BUY';
+  else if (score >= 1) signal = 'WAIT TO BUY';
+  else if (score <= -5) signal = 'STRONG SELL';
+  else if (score <= -3) signal = 'GOOD SELL';
+  else if (score <= -1) signal = 'WAIT TO SELL';
 
-  // 📈 Tendance de fond
+  // 🧭 Détection de la tendance
   let trend = 'INDÉTERMINÉE';
-  if (price > latest.ema50 && latest.ema50 > latest.ema100) trend = 'HAUSSIÈRE';
-  else if (price < latest.ema50 && latest.ema50 < latest.ema100) trend = 'BAISSIÈRE';
+  const above50 = latest.price > latest.ema50;
+  const above100 = latest.price > latest.ema100;
+  if (above50 && above100) trend = 'HAUSSIÈRE';
+  else if (!above50 && !above100) trend = 'BAISSIÈRE';
 
-  // 🔧 Ajustement si tendance floue
-  if (trend === 'INDÉTERMINÉE' && signal.includes('GOOD')) {
+  // ❌ Ajustement si la tendance est floue mais signal trop optimiste
+  if (trend === 'INDÉTERMINÉE' && (signal.includes('GOOD') || signal.includes('STRONG'))) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
-  // 📉 Ranging Market
+  // 📉 Range étroit
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
-  const rangeThreshold = 0.0010;
-  const isRanging = recentRange < rangeThreshold;
-
+  const isRanging = recentRange < 0.0010;
   if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
-  // ⚡ Momentum sur 4 bougies
-  const last4 = close.slice(-4);
-  const netChange = last4[3] - last4[0];
-  const totalMove = Math.abs(last4[1] - last4[0]) + Math.abs(last4[2] - last4[1]) + Math.abs(last4[3] - last4[2]);
-  const momentum = totalMove !== 0 ? Math.abs(netChange / totalMove) : 0;
-  const momentumSignal = momentum > 0.75 ? (netChange > 0 ? 'STRONG BUY (réactif)' : 'STRONG SELL (réactif)') : null;
-
-  if (momentumSignal && signal.startsWith('WAIT')) {
-    signal = momentumSignal;
-  }
-
   return {
     ...latest,
+    score,
     signal,
     trend,
-    recentRange,
-    momentumSignal,
-    bullScore: bull,
-    bearScore: bear
+    recentRange
   };
 }
+
 
 async function getCurrentPrice() {
   try {
