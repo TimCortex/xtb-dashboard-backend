@@ -206,7 +206,7 @@ function calculateIchimoku(data) {
 }
 
 
-function analyze(data) {
+function analyze(data, currentPrice = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -221,7 +221,7 @@ function analyze(data) {
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
-  const price = close.at(-1);
+  const price = currentPrice ?? close.at(-1); // ✅ Priorité au prix réel
   const ema50Val = ema50.at(-1);
   const ema100Val = ema100.at(-1);
   const adxVal = adx.at(-1)?.adx;
@@ -376,7 +376,7 @@ cron.schedule('* * * * *', async () => {
     const lastCandle = candles.at(-1);
     const currentPrice = await getCurrentPrice();
     const levels = detectLevels(candles);
-    const analysis = await analyze(candles);
+    const analysis = await analyze(candles, currentPrice);
 if (!analysis) return; // 🔁 Stopper si analyse impossible
     lastAnalysis = analysis;
     appendToCSV(analysis);
