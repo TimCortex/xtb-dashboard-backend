@@ -387,9 +387,10 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
 
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-          + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
-          + `📊 **Tendance :** ${analysis.trend}\n`
-          + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`;
+        + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
+        + `📊 **Tendance :** ${analysis.trend}\n`
+        + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
+        + `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%\n`;
 
   if (warning) msg += `${warning}\n`;
   if (pattern) msg += `${pattern}\n`;
