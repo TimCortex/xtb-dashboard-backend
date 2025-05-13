@@ -348,8 +348,9 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   totalPossible++;
 
   // Calcul du pourcentage de confiance haussier ou baissier
-  const confidence = bull / totalPossible;
-  const confidenceBear = bear / totalPossible;
+  const totalScore = bull + bear;
+const confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
+const confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
 
   let signal = 'WAIT';
   if (confidence >= 0.8) signal = 'STRONG BUY';
@@ -360,14 +361,34 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   else if (confidenceBear >= 0.4) signal = 'WAIT TO SELL';
 
   return {
-    price,
-    signal,
-    bullPoints: bull,
-    bearPoints: bear,
-    confidence: +(confidence * 100).toFixed(1),
-    confidenceBear: +(confidenceBear * 100).toFixed(1),
-    totalCriteria: totalPossible
-  };
+  timestamp: new Date().toISOString(),
+  price,
+  signal,
+  trend: (price > ema50Val && ema50Val > ema100Val)
+    ? 'HAUSSIÈRE'
+    : (price < ema50Val && ema50Val < ema100Val)
+    ? 'BAISSIÈRE'
+    : 'INDÉTERMINÉE',
+  rsi14: rsiVal,
+  macd: macd.at(-1),
+  stoch: stochVal,
+  williamsR: williamsRVal,
+  sar: sarVal,
+  ema50: ema50Val,
+  ema100: ema100Val,
+  adx: adxVal,
+  ichimoku,
+  m15Trend,
+  bullPoints: bull,
+  bearPoints: bear,
+  totalScore,
+  confidence,
+  confidenceBear,
+  recentRange,
+  isVolatile: volatilitySpike,
+  pullbackHaussier,
+  pullbackBaissier
+};
 }
 
 
@@ -386,20 +407,19 @@ async function getCurrentPrice() {
 async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
 
+  const confBull = isFinite(analysis.confidence) ? analysis.confidence.toFixed(1) : '—';
+  const confBear = isFinite(analysis.confidenceBear) ? analysis.confidenceBear.toFixed(1) : '—';
+
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-        + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
-        + `📊 **Tendance :** ${analysis.trend}\n`
-        + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
-        + `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%\n`;
+          + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
+          + `📊 **Tendance :** ${analysis.trend}\n`
+          + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
+          + `📊 **Confiance :** 📈 ${confBull}% / 📉 ${confBear}%\n`;
 
   if (warning) msg += `${warning}\n`;
   if (pattern) msg += `${pattern}\n`;
-  if (analysis.isVolatile) {
-  msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
-}
-  if (analysis.impulseDetected) {
-  msg += `🚨 **Mouvement impulsif détecté** — prudence sur ce signal\n`;
-}
+  if (analysis.isVolatile) msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
+  if (analysis.impulseDetected) msg += `🚨 **Mouvement impulsif détecté** — prudence sur ce signal\n`;
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
     msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
@@ -407,7 +427,6 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
 
   await axios.post(WEBHOOK_URL, { content: msg });
 }
-
 
 function getParisTimeString() {
   const now = new Date();
