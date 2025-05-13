@@ -144,6 +144,36 @@ function detectFVGs(data) {
 
 let lastAnalysis = null;
 
+function analyzeM15(data) {
+  const close = data.map(c => c.c);
+  const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
+  const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
+
+  const price = close.at(-1);
+  const ema50Val = ema50.at(-1);
+  const ema100Val = ema100.at(-1);
+
+  const trend = (price > ema50Val && ema50Val > ema100Val)
+    ? 'HAUSSIÈRE'
+    : (price < ema50Val && ema50Val < ema100Val)
+    ? 'BAISSIÈRE'
+    : 'INDÉTERMINÉE';
+
+  return {
+    trend,
+    price,
+    ema50: ema50Val,
+    ema100: ema100Val
+  };
+}
+
+async function fetchForexData15m() {
+  const today = new Date().toISOString().split('T')[0];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/15/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const { data } = await axios.get(url);
+  return data.results.reverse();
+}
+
 async function fetchForexData() {
   const today = new Date().toISOString().split('T')[0];
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
@@ -206,7 +236,7 @@ function calculateIchimoku(data) {
 }
 
 
-function analyze(data, currentPrice = null) {
+function analyze(data, currentPrice = null, m15Trend = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -265,7 +295,7 @@ function analyze(data, currentPrice = null) {
 
   if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
 
-  const totalScore = bull + bear;
+  
   let signal = 'WAIT';
   if (bull >= 8) signal = 'STRONG BUY';
   else if (bull >= 6) signal = 'GOOD BUY';
@@ -293,6 +323,11 @@ function analyze(data, currentPrice = null) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
+  if (m15Trend) {
+    if (signal.includes('BUY') && m15Trend === 'HAUSSIÈRE') bull++;
+    if (signal.includes('SELL') && m15Trend === 'BAISSIÈRE') bear++;
+  }
+  const totalScore = bull + bear;
   return {
     timestamp: new Date().toISOString(),
     price,
@@ -307,6 +342,7 @@ function analyze(data, currentPrice = null) {
     ema100: ema100Val,
     adx: adxVal,
     ichimoku,
+    m15Trend,
     bullPoints: bull,
     bearPoints: bear,
     totalScore,
@@ -385,15 +421,16 @@ cron.schedule('* * * * *', async () => {
     if (isPaused) return;
 
     const candles = await fetchForexData();
-    const lastCandle = candles.at(-1);
+    const candles15m = await fetchForexData15m();
     const currentPrice = await getCurrentPrice();
     const levels = detectLevels(candles);
-    const analysis = await analyze(candles, currentPrice);
-if (!analysis) return; // 🔁 Stopper si analyse impossible
+    const m15 = analyzeM15(candles15m);
+    const analysis = analyze(candles, currentPrice, m15.trend);
+    if (!analysis) return;
     lastAnalysis = analysis;
     appendToCSV(analysis);
     const recentCandles = candles.slice(-4);
-const pattern = detectMultiCandlePattern(recentCandles);
+    const pattern = detectMultiCandlePattern(recentCandles);
     console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
     await sendDiscordAlert(analysis, levels, pattern);
   } catch (err) {
