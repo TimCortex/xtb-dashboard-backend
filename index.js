@@ -239,6 +239,14 @@ function calculateIchimoku(data) {
   return { conversion, base, futureSpanA, futureSpanB };
 }
 
+function isImpulseCandle(candle, atrValue, multiplier = 2.5) {
+  const body = Math.abs(candle.c - candle.o);
+  const range = candle.h - candle.l;
+
+  // Bougie avec une grande amplitude et un corps dominant
+  return range > atrValue * multiplier && (body / range) > 0.7;
+}
+
 function analyze(data, currentPrice = null, m15Trend = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -251,6 +259,11 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const price = currentPrice ?? previousClose;
   const delta = Math.abs(price - previousClose);
   const volatilitySpike = delta > atrVal * 2;
+
+  const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
+const atrVal = atr.at(-1);
+const lastCandle = data.at(-1);
+const impulseDetected = isImpulseCandle(lastCandle, atrVal);
 
   // 📉 Indicateurs techniques
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
@@ -344,6 +357,10 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
+  if (impulseDetected && (signal.includes('BUY') || signal.includes('SELL'))) {
+  signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
+}
+
   const totalScore = bull + bear;
 
   return {
@@ -365,6 +382,7 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     bearPoints: bear,
     totalScore,
     recentRange,
+    impulseDetected,
     isVolatile: volatilitySpike
   };
 }
@@ -394,6 +412,9 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   if (pattern) msg += `${pattern}\n`;
   if (analysis.isVolatile) {
   msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
+}
+  if (analysis.impulseDetected) {
+  msg += `🚨 **Mouvement impulsif détecté** — prudence sur ce signal\n`;
 }
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
