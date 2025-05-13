@@ -280,22 +280,48 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const ichimokuConv = ichimoku?.conversion;
   const ichimokuBase = ichimoku?.base;
 
-  let bull = 0, bear = 0;
+  let bull = 0, bear = 0, totalPossible = 0;
 
-  // --- Scoring
+  // Tendance
+  totalPossible++;
   if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
+
+  // ADX
+  totalPossible++;
   if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
+
+  // Ichimoku
+  totalPossible++;
   if (ichimokuConv > ichimokuBase) bull++; else if (ichimokuConv < ichimokuBase) bear++;
+
+  // RSI
+  totalPossible++;
   if (rsiVal > 50) bull++; else if (rsiVal < 50) bear++;
+
+  // MACD
+  totalPossible++;
   if (macdHist > 0) bull++; else if (macdHist < 0) bear++;
+
+  // Stochastique
+  totalPossible++;
   if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
+
+  // Williams %R
+  totalPossible++;
   if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
+
+  // Parabolic SAR
+  totalPossible++;
   if (sarVal < price) bull++; else if (sarVal > price) bear++;
+
+  // Structure
+  totalPossible++;
   const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
   const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
   if (structureBull) bull++; else if (structureBear) bear++;
 
-  // --- Pattern
+  // Pattern bougie
+  totalPossible++;
   const last = data.at(-1);
   const body = Math.abs(last.c - last.o);
   const range = last.h - last.l;
@@ -308,75 +334,41 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   else if (lowerWick > body * 2) patternScore = 1;
   if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
 
-  // --- Détection de pullback
+  // Tendance M15
+  totalPossible++;
+  if (m15Trend === 'HAUSSIÈRE') bull++;
+  if (m15Trend === 'BAISSIÈRE') bear++;
+
+  // Pullback
   const prevClose = close.at(-2);
   const pullbackHaussier = prevClose > ema50Val && close.at(-1) < ema50Val && price > ema50Val && last.c > last.o;
   const pullbackBaissier = prevClose < ema50Val && close.at(-1) > ema50Val && price < ema50Val && last.c < last.o;
   if (pullbackHaussier) bull++;
   if (pullbackBaissier) bear++;
+  totalPossible++;
 
-  // --- Tendance M15
-  if (m15Trend === 'HAUSSIÈRE') bull++;
-  if (m15Trend === 'BAISSIÈRE') bear++;
+  // Calcul du pourcentage de confiance haussier ou baissier
+  const confidence = bull / totalPossible;
+  const confidenceBear = bear / totalPossible;
 
-  // --- Score final
   let signal = 'WAIT';
-  if (bull >= 8) signal = 'STRONG BUY';
-  else if (bull >= 6) signal = 'GOOD BUY';
-  else if (bull >= 4) signal = 'WAIT TO BUY';
-  else if (bear >= 8) signal = 'STRONG SELL';
-  else if (bear >= 6) signal = 'GOOD SELL';
-  else if (bear >= 4) signal = 'WAIT TO SELL';
-
-  // --- Anti-contresens rapide
-  const oldPrice = close.at(-3);
-  const priceDrop = oldPrice - price;
-  const priceRise = price - oldPrice;
-  if (signal.includes('BUY') && priceDrop > 0.0005) signal = 'WAIT TO BUY';
-  if (signal.includes('SELL') && priceRise > 0.0005) signal = 'WAIT TO SELL';
-
-  // --- Volatilité et zone de range
-  const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
-  const isRanging = recentRange < 0.0006;
-  if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
-    signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
-  }
-
-  if (volatilitySpike && (signal.includes('STRONG') || signal.includes('GOOD'))) {
-    signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
-  }
-
-  const deltaFromLastClose = price - last.c;
-  if (signal.includes('SELL') && deltaFromLastClose > 0.0003) signal = 'WAIT TO SELL';
-  if (signal.includes('BUY') && deltaFromLastClose < -0.0003) signal = 'WAIT TO BUY';
-
-  const totalScore = bull + bear;
+  if (confidence >= 0.8) signal = 'STRONG BUY';
+  else if (confidence >= 0.6) signal = 'GOOD BUY';
+  else if (confidence >= 0.4) signal = 'WAIT TO BUY';
+  else if (confidenceBear >= 0.8) signal = 'STRONG SELL';
+  else if (confidenceBear >= 0.6) signal = 'GOOD SELL';
+  else if (confidenceBear >= 0.4) signal = 'WAIT TO SELL';
 
   return {
-    timestamp: new Date().toISOString(),
     price,
     signal,
-    trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE' : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE' : 'INDÉTERMINÉE',
-    rsi14: rsiVal,
-    macd: macd.at(-1),
-    stoch: stochVal,
-    williamsR: williamsRVal,
-    sar: sarVal,
-    ema50: ema50Val,
-    ema100: ema100Val,
-    adx: adxVal,
-    ichimoku,
-    m15Trend,
     bullPoints: bull,
     bearPoints: bear,
-    totalScore,
-    recentRange,
-    isVolatile: volatilitySpike,
-    pullbackHaussier,
-    pullbackBaissier
+    confidence: +(confidence * 100).toFixed(1),
+    confidenceBear: +(confidenceBear * 100).toFixed(1),
+    totalCriteria: totalPossible
   };
 }
-
 
 
 async function getCurrentPrice() {
