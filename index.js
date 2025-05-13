@@ -257,6 +257,7 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const atrVal = atr.at(-1);
   const lastRange = high.at(-1) - low.at(-1);
   const volatilitySpike = lastRange > atrVal * 1.5;
+  const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
