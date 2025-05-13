@@ -265,18 +265,15 @@ function analyze(data, currentPrice = null, m15Trend = null) {
 
   let bull = 0, bear = 0;
 
-  // Tendance & dynamique (3 pts)
   if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
   if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
   if (ichimokuConv > ichimokuBase) bull++; else if (ichimokuConv < ichimokuBase) bear++;
 
-  // Momentum & oscillateurs (4 pts)
   if (rsiVal > 50) bull++; else if (rsiVal < 50) bear++;
   if (macdHist > 0) bull++; else if (macdHist < 0) bear++;
   if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
   if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
 
-  // Price Action (3 pts)
   if (sarVal < price) bull++; else if (sarVal > price) bear++;
   const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
   const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
@@ -295,7 +292,6 @@ function analyze(data, currentPrice = null, m15Trend = null) {
 
   if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
 
-  
   let signal = 'WAIT';
   if (bull >= 8) signal = 'STRONG BUY';
   else if (bull >= 6) signal = 'GOOD BUY';
@@ -304,19 +300,12 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   else if (bear >= 6) signal = 'GOOD SELL';
   else if (bear >= 4) signal = 'WAIT TO SELL';
 
-  // ⚠️ Vérification de cohérence avec la dynamique actuelle (anti-piège)
   const oldPrice = close.at(-3);
   const priceDrop = oldPrice - price;
   const priceRise = price - oldPrice;
+  if (signal.includes('BUY') && priceDrop > 0.0005) signal = 'WAIT TO BUY';
+  if (signal.includes('SELL') && priceRise > 0.0005) signal = 'WAIT TO SELL';
 
-  if (signal.includes('BUY') && priceDrop > 0.0005) {
-    signal = 'WAIT TO BUY';
-  }
-  if (signal.includes('SELL') && priceRise > 0.0005) {
-    signal = 'WAIT TO SELL';
-  }
-
-  // 📏 Check zone de range
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
   const isRanging = recentRange < 0.0010;
   if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
@@ -327,6 +316,12 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     if (signal.includes('BUY') && m15Trend === 'HAUSSIÈRE') bull++;
     if (signal.includes('SELL') && m15Trend === 'BAISSIÈRE') bear++;
   }
+
+  // 🔄 Anti-contresens immédiat sur inversion de la bougie en cours
+  const deltaFromLastClose = price - last.c;
+  if (signal.includes('SELL') && deltaFromLastClose > 0.0003) signal = 'WAIT TO SELL';
+  if (signal.includes('BUY') && deltaFromLastClose < -0.0003) signal = 'WAIT TO BUY';
+
   const totalScore = bull + bear;
   return {
     timestamp: new Date().toISOString(),
