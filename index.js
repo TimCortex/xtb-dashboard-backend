@@ -330,7 +330,7 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const totalScore = bull + bear;
   return {
     timestamp: new Date().toISOString(),
-    price,
+    price: currentPrice ?? close.at(-1),
     signal,
     trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE' : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE' : 'INDÉTERMINÉE',
     rsi14: rsiVal,
