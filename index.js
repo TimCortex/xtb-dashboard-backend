@@ -260,8 +260,7 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const delta = Math.abs(price - previousClose);
   const volatilitySpike = delta > atrVal * 2;
 
-  const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
-const atrVal = atr.at(-1);
+  
 const lastCandle = data.at(-1);
 const impulseDetected = isImpulseCandle(lastCandle, atrVal);
 
