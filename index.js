@@ -230,20 +230,25 @@ function generateWarning(price, signal, levels, fvgList = []) {
 function calculateIchimoku(data) {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-  const conv = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
-  const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
-  return { conversion: conv, base };
-}
 
+  const conversion = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
+  const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
+  const futureSpanA = (conversion + base) / 2;
+  const futureSpanB = (Math.max(...high.slice(-52)) + Math.min(...low.slice(-52))) / 2;
+
+  return { conversion, base, futureSpanA, futureSpanB };
+}
 
 function analyze(data, currentPrice = null, m15Trend = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
+
+  // Volatilité
   const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
-const atrVal = atr.at(-1);
-const lastRange = high.at(-1) - low.at(-1);
-const volatilitySpike = lastRange > atrVal * 1.5;
+  const atrVal = atr.at(-1);
+  const lastRange = high.at(-1) - low.at(-1);
+  const volatilitySpike = lastRange > atrVal * 1.5;
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
@@ -261,6 +266,7 @@ const volatilitySpike = lastRange > atrVal * 1.5;
   const adxVal = adx.at(-1)?.adx;
   const rsiVal = rsi.at(-1);
   const macdHist = macd.at(-1)?.histogram;
+  const macdPrevHist = macd.at(-2)?.histogram;
   const stochVal = stoch.at(-1);
   const williamsRVal = williamsR.at(-1);
   const sarVal = sar.at(-1);
@@ -269,33 +275,60 @@ const volatilitySpike = lastRange > atrVal * 1.5;
 
   let bull = 0, bear = 0;
 
-  if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
+  // 🌪️ Réduction pondérée en cas de forte volatilité
+  if (volatilitySpike) {
+    if (price > ema50Val && ema50Val > ema100Val) bull--;
+    if (price < ema50Val && ema50Val < ema100Val) bear--;
+  }
+
+  // Tendance & dynamique (3 pts)
+  if (price > ema50Val && ema50Val > ema100Val) bull++;
+  else if (price < ema50Val && ema50Val < ema100Val) bear++;
   if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
   if (ichimokuConv > ichimokuBase) bull++; else if (ichimokuConv < ichimokuBase) bear++;
 
+  // Momentum & oscillateurs (4 pts)
   if (rsiVal > 50) bull++; else if (rsiVal < 50) bear++;
   if (macdHist > 0) bull++; else if (macdHist < 0) bear++;
   if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
   if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
 
+  // Price Action (3 pts)
   if (sarVal < price) bull++; else if (sarVal > price) bear++;
   const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
   const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
   if (structureBull) bull++; else if (structureBear) bear++;
 
-  let patternScore = 0;
+  // Pattern
   const last = data.at(-1);
   const body = Math.abs(last.c - last.o);
   const range = last.h - last.l;
   const upperWick = last.h - Math.max(last.c, last.o);
   const lowerWick = Math.min(last.c, last.o) - last.l;
   const bodyPct = body / range;
-  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) patternScore = last.c > last.o ? 1 : -1;
-  else if (upperWick > body * 2) patternScore = -1;
-  else if (lowerWick > body * 2) patternScore = 1;
+  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) last.c > last.o ? bull++ : bear++;
+  else if (upperWick > body * 2) bear++;
+  else if (lowerWick > body * 2) bull++;
 
-  if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
+  // Ichimoku futur
+  if (ichimoku?.futureSpanA && ichimoku?.futureSpanB) {
+    const bullishCloud = ichimoku.futureSpanA > ichimoku.futureSpanB;
+    if (bullishCloud && price > ichimoku.futureSpanA) bull++;
+    else if (!bullishCloud && price < ichimoku.futureSpanB) bear++;
+  }
 
+  // Divergences MACD
+  if (macdHist < 0 && macdHist > macdPrevHist && price < close.at(-2)) bull--;
+  if (macdHist > 0 && macdHist < macdPrevHist && price > close.at(-2)) bear--;
+
+  // Faible volatilité récente
+  const recentVolatility = Math.max(...close.slice(-10)) - Math.min(...close.slice(-10));
+  if (recentVolatility < 0.0005) {
+    if (rsiVal > 50 || macdHist > 0 || stochVal.k > stochVal.d) bull--;
+    if (rsiVal < 50 || macdHist < 0 || stochVal.k < stochVal.d) bear--;
+  }
+
+  // Signal brut
   let signal = 'WAIT';
   if (bull >= 8) signal = 'STRONG BUY';
   else if (bull >= 6) signal = 'GOOD BUY';
@@ -304,11 +337,10 @@ const volatilitySpike = lastRange > atrVal * 1.5;
   else if (bear >= 6) signal = 'GOOD SELL';
   else if (bear >= 4) signal = 'WAIT TO SELL';
 
+  // Anti-pièges & zone de range
   const oldPrice = close.at(-3);
-  const priceDrop = oldPrice - price;
-  const priceRise = price - oldPrice;
-  if (signal.includes('BUY') && priceDrop > 0.0005) signal = 'WAIT TO BUY';
-  if (signal.includes('SELL') && priceRise > 0.0005) signal = 'WAIT TO SELL';
+  if (signal.includes('BUY') && oldPrice - price > 0.0005) signal = 'WAIT TO BUY';
+  if (signal.includes('SELL') && price - oldPrice > 0.0005) signal = 'WAIT TO SELL';
 
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
   const isRanging = recentRange < 0.0010;
@@ -316,24 +348,27 @@ const volatilitySpike = lastRange > atrVal * 1.5;
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
+  // Contexte M15
   if (m15Trend) {
     if (signal.includes('BUY') && m15Trend === 'HAUSSIÈRE') bull++;
     if (signal.includes('SELL') && m15Trend === 'BAISSIÈRE') bear++;
   }
 
-  // 🔄 Anti-contresens immédiat sur inversion de la bougie en cours
+  // Dernière vérification : retournement bougie en cours
   const deltaFromLastClose = price - last.c;
   if (signal.includes('SELL') && deltaFromLastClose > 0.0003) signal = 'WAIT TO SELL';
   if (signal.includes('BUY') && deltaFromLastClose < -0.0003) signal = 'WAIT TO BUY';
 
   const totalScore = bull + bear;
 
+  // Volatilité extrême = neutralisation signal
   if (volatilitySpike && (signal.includes('STRONG') || signal.includes('GOOD'))) {
-  signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
-}
+    signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
+  }
+
   return {
     timestamp: new Date().toISOString(),
-    price: currentPrice ?? close.at(-1),
+    price,
     signal,
     trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE' : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE' : 'INDÉTERMINÉE',
     rsi14: rsiVal,
@@ -353,6 +388,7 @@ const volatilitySpike = lastRange > atrVal * 1.5;
     isVolatile: volatilitySpike
   };
 }
+
 
 
 
