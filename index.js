@@ -240,6 +240,10 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
+  const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
+const atrVal = atr.at(-1);
+const lastRange = high.at(-1) - low.at(-1);
+const volatilitySpike = lastRange > atrVal * 1.5;
 
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
@@ -323,6 +327,10 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   if (signal.includes('BUY') && deltaFromLastClose < -0.0003) signal = 'WAIT TO BUY';
 
   const totalScore = bull + bear;
+
+  if (volatilitySpike && (signal.includes('STRONG') || signal.includes('GOOD'))) {
+  signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
+}
   return {
     timestamp: new Date().toISOString(),
     price: currentPrice ?? close.at(-1),
@@ -341,7 +349,8 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     bullPoints: bull,
     bearPoints: bear,
     totalScore,
-    recentRange
+    recentRange,
+    isVolatile: volatilitySpike
   };
 }
 
@@ -370,6 +379,9 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
 
   if (warning) msg += `${warning}\n`;
   if (pattern) msg += `${pattern}\n`;
+  if (analysis.isVolatile) {
+  msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
+}
 
   if (analysis.recentRange && analysis.recentRange < 0.0010) {
     msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
