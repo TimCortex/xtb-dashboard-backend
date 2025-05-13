@@ -247,24 +247,17 @@ function isImpulseCandle(candle, atrValue, multiplier = 2.5) {
   return range > atrValue * multiplier && (body / range) > 0.7;
 }
 
+// ... (tout le haut du script reste inchangé jusqu'à la fonction analyze)
+
 function analyze(data, currentPrice = null, m15Trend = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-
-  // 🧠 Calcul ATR + détection volatilité réelle basée sur currentPrice
   const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
   const atrVal = atr.at(-1);
-  const previousClose = close.at(-1);
-  const price = currentPrice ?? previousClose;
-  const delta = Math.abs(price - previousClose);
-  const volatilitySpike = delta > atrVal * 2;
+  const lastRange = high.at(-1) - low.at(-1);
+  const volatilitySpike = lastRange > atrVal * 1.5;
 
-  
-const lastCandle = data.at(-1);
-const impulseDetected = isImpulseCandle(lastCandle, atrVal);
-
-  // 📉 Indicateurs techniques
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
   const adx = technicalIndicators.ADX.calculate({ close, high, low, period: 14 });
@@ -275,6 +268,7 @@ const impulseDetected = isImpulseCandle(lastCandle, atrVal);
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
+  const price = currentPrice ?? close.at(-1);
   const ema50Val = ema50.at(-1);
   const ema100Val = ema100.at(-1);
   const adxVal = adx.at(-1)?.adx;
@@ -286,25 +280,22 @@ const impulseDetected = isImpulseCandle(lastCandle, atrVal);
   const ichimokuConv = ichimoku?.conversion;
   const ichimokuBase = ichimoku?.base;
 
-  // 📊 Scores pondérés
   let bull = 0, bear = 0;
 
+  // --- Scoring
   if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
   if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
   if (ichimokuConv > ichimokuBase) bull++; else if (ichimokuConv < ichimokuBase) bear++;
-
   if (rsiVal > 50) bull++; else if (rsiVal < 50) bear++;
   if (macdHist > 0) bull++; else if (macdHist < 0) bear++;
   if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
   if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
-
   if (sarVal < price) bull++; else if (sarVal > price) bear++;
-
   const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
   const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
   if (structureBull) bull++; else if (structureBear) bear++;
 
-  // 🕯️ Bougie actuelle
+  // --- Pattern
   const last = data.at(-1);
   const body = Math.abs(last.c - last.o);
   const range = last.h - last.l;
@@ -317,7 +308,18 @@ const impulseDetected = isImpulseCandle(lastCandle, atrVal);
   else if (lowerWick > body * 2) patternScore = 1;
   if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
 
-  // 🧠 Signal basé sur score
+  // --- Détection de pullback
+  const prevClose = close.at(-2);
+  const pullbackHaussier = prevClose > ema50Val && close.at(-1) < ema50Val && price > ema50Val && last.c > last.o;
+  const pullbackBaissier = prevClose < ema50Val && close.at(-1) > ema50Val && price < ema50Val && last.c < last.o;
+  if (pullbackHaussier) bull++;
+  if (pullbackBaissier) bear++;
+
+  // --- Tendance M15
+  if (m15Trend === 'HAUSSIÈRE') bull++;
+  if (m15Trend === 'BAISSIÈRE') bear++;
+
+  // --- Score final
   let signal = 'WAIT';
   if (bull >= 8) signal = 'STRONG BUY';
   else if (bull >= 6) signal = 'GOOD BUY';
@@ -326,39 +328,27 @@ const impulseDetected = isImpulseCandle(lastCandle, atrVal);
   else if (bear >= 6) signal = 'GOOD SELL';
   else if (bear >= 4) signal = 'WAIT TO SELL';
 
-  // 🛑 Anti-contresens brut
+  // --- Anti-contresens rapide
   const oldPrice = close.at(-3);
   const priceDrop = oldPrice - price;
   const priceRise = price - oldPrice;
   if (signal.includes('BUY') && priceDrop > 0.0005) signal = 'WAIT TO BUY';
   if (signal.includes('SELL') && priceRise > 0.0005) signal = 'WAIT TO SELL';
 
-  // 🔁 Check micro-inversion instantanée
-  const deltaFromLastClose = price - last.c;
-  if (signal.includes('SELL') && deltaFromLastClose > 0.0003) signal = 'WAIT TO SELL';
-  if (signal.includes('BUY') && deltaFromLastClose < -0.0003) signal = 'WAIT TO BUY';
-
-  // 📏 Zone de range
-  const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
-  const isRanging = recentRange < 0.0010;
+  // --- Volatilité et zone de range
+  const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
+  const isRanging = recentRange < 0.0006;
   if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
-  // 🔄 Tendance M15 en renfort pondéré
-  if (m15Trend) {
-    if (signal.includes('BUY') && m15Trend === 'HAUSSIÈRE') bull++;
-    if (signal.includes('SELL') && m15Trend === 'BAISSIÈRE') bear++;
-  }
-
-  // 🌪️ Volatilité : neutralisation finale
   if (volatilitySpike && (signal.includes('STRONG') || signal.includes('GOOD'))) {
     signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
   }
 
-  if (impulseDetected && (signal.includes('BUY') || signal.includes('SELL'))) {
-  signal = signal.includes('BUY') ? 'WAIT TO BUY' : 'WAIT TO SELL';
-}
+  const deltaFromLastClose = price - last.c;
+  if (signal.includes('SELL') && deltaFromLastClose > 0.0003) signal = 'WAIT TO SELL';
+  if (signal.includes('BUY') && deltaFromLastClose < -0.0003) signal = 'WAIT TO BUY';
 
   const totalScore = bull + bear;
 
@@ -381,10 +371,12 @@ const impulseDetected = isImpulseCandle(lastCandle, atrVal);
     bearPoints: bear,
     totalScore,
     recentRange,
-    impulseDetected,
-    isVolatile: volatilitySpike
+    isVolatile: volatilitySpike,
+    pullbackHaussier,
+    pullbackBaissier
   };
 }
+
 
 
 async function getCurrentPrice() {
