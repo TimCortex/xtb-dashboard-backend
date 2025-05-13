@@ -221,7 +221,7 @@ function analyze(data, currentPrice = null) {
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
-  const price = currentPrice ?? close.at(-1); // ✅ Priorité au prix réel
+  const price = currentPrice ?? close.at(-1);
   const ema50Val = ema50.at(-1);
   const ema100Val = ema100.at(-1);
   const adxVal = adx.at(-1)?.adx;
@@ -259,9 +259,9 @@ function analyze(data, currentPrice = null) {
   const upperWick = last.h - Math.max(last.c, last.o);
   const lowerWick = Math.min(last.c, last.o) - last.l;
   const bodyPct = body / range;
-  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) patternScore = last.c > last.o ? 1 : -1; // Marubozu
-  else if (upperWick > body * 2) patternScore = -1; // Shooting Star
-  else if (lowerWick > body * 2) patternScore = 1; // Hammer
+  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) patternScore = last.c > last.o ? 1 : -1;
+  else if (upperWick > body * 2) patternScore = -1;
+  else if (lowerWick > body * 2) patternScore = 1;
 
   if (patternScore === 1) bull++; else if (patternScore === -1) bear++;
 
@@ -274,7 +274,19 @@ function analyze(data, currentPrice = null) {
   else if (bear >= 6) signal = 'GOOD SELL';
   else if (bear >= 4) signal = 'WAIT TO SELL';
 
-  // Range Check
+  // ⚠️ Vérification de cohérence avec la dynamique actuelle (anti-piège)
+  const oldPrice = close.at(-3);
+  const priceDrop = oldPrice - price;
+  const priceRise = price - oldPrice;
+
+  if (signal.includes('BUY') && priceDrop > 0.0005) {
+    signal = 'WAIT TO BUY';
+  }
+  if (signal.includes('SELL') && priceRise > 0.0005) {
+    signal = 'WAIT TO SELL';
+  }
+
+  // 📏 Check zone de range
   const recentRange = Math.max(...close.slice(-20)) - Math.min(...close.slice(-20));
   const isRanging = recentRange < 0.0010;
   if (isRanging && (signal.includes('STRONG') || signal.includes('GOOD'))) {
