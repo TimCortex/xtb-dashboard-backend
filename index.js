@@ -106,9 +106,32 @@ function analyzeM15(data) {
        : 'INDÉTERMINÉE';
 }
 
+function analyzeTrendM5M15(data5m, data15m) {
+  const close5 = data5m.map(c => c.c);
+  const close15 = data15m.map(c => c.c);
+  const ema50_5m = technicalIndicators.EMA.calculate({ period: 50, values: close5 });
+  const ema100_5m = technicalIndicators.EMA.calculate({ period: 100, values: close5 });
+  const ema50_15m = technicalIndicators.EMA.calculate({ period: 50, values: close15 });
+  const ema100_15m = technicalIndicators.EMA.calculate({ period: 100, values: close15 });
+
+  const price5 = close5.at(-1);
+  const price15 = close15.at(-1);
+
+  let trend5 = price5 > ema50_5m.at(-1) && ema50_5m.at(-1) > ema100_5m.at(-1) ? 'HAUSSIÈRE'
+             : price5 < ema50_5m.at(-1) && ema50_5m.at(-1) < ema100_5m.at(-1) ? 'BAISSIÈRE'
+             : 'INDÉTERMINÉE';
+
+  let trend15 = price15 > ema50_15m.at(-1) && ema50_15m.at(-1) > ema100_15m.at(-1) ? 'HAUSSIÈRE'
+              : price15 < ema50_15m.at(-1) && ema50_15m.at(-1) < ema100_15m.at(-1) ? 'BAISSIÈRE'
+              : 'INDÉTERMINÉE';
+
+  return { trend5, trend15 };
+}
+
+
 // ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
 
-function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
+function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'INDÉTERMINÉE') {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -145,25 +168,28 @@ if (typeof global.entryTime === 'undefined') global.entryTime = null;
   }
 
   // M15 Trend
-  if (m15Trend === 'HAUSSIÈRE') {
-    bull += 0.6;
-    details.push('✅ M15 HAUSSIÈRE (+0.6)');
+  // Tendance combinée M5 / M15
+if (trend5 === 'HAUSSIÈRE') {
+  bull += 0.6;
+  details.push('✅ Tendance M5 haussière (+0.6)');
+} else if (trend5 === 'BAISSIÈRE') {
+  bear += 0.6;
+  details.push('❌ Tendance M5 baissière (+0.6 bear)');
+}
 
-    // Si la tendance M15 est haussière et que le prix est aussi au-dessus de la Kumo Ichimoku avec Tenkan > Kijun → confirmation forte
-    if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
-      bull += 0.6;
-      details.push('🔺 Tendance confirmée par Ichimoku (prix au-dessus Kumo + Tenkan>Kijun) (+0.6 bull)');
-    }
-  } else if (m15Trend === 'BAISSIÈRE') {
-    bear += 0.6;
-    details.push('❌ M15 BAISSIÈRE (+0.6 bear)');
+if (trend15 === 'HAUSSIÈRE') {
+  bull += 0.4;
+  details.push('✅ Tendance M15 haussière (+0.4)');
+} else if (trend15 === 'BAISSIÈRE') {
+  bear += 0.4;
+  details.push('❌ Tendance M15 baissière (+0.4 bear)');
+}
 
-    // Si la tendance M15 est baissière et que le prix est aussi sous la Kumo Ichimoku avec Tenkan < Kijun → confirmation forte
-    if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) {
-      bear += 0.6;
-      details.push('🔻 Tendance confirmée par Ichimoku (prix sous Kumo + Tenkan<Kijun) (+0.6 bear)');
-    }
-  }
+// Si contradiction
+if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
+    (trend5 === 'BAISSIÈRE' && trend15 === 'HAUSSIÈRE')) {
+  details.push('⚠️ Contradiction entre tendance M5 et M15');
+}
 
   // MACD
   const lastMACD = macd.at(-1);
@@ -422,8 +448,8 @@ cron.schedule('* * * * *', async () => {
     const data5m = await fetchData(5);
     const data15m = await fetchData(15);
     const price = await getCurrentPrice();
-    const m15Trend = analyzeM15(data15m);
-    const analysis = generateVisualAnalysis(data5m, m15Trend);
+    const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
+    const analysis = generateVisualAnalysis(data5m, trend5, trend15);
 
     let msg = `_________________________
 `;
