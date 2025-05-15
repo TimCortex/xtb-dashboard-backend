@@ -329,9 +329,11 @@ cron.schedule('* * * * *', async () => {
     const m15Trend = analyzeM15(data15m);
     const analysis = generateVisualAnalysis(data5m, m15Trend);
 
-    let msg = `📈 **Signal visuel : ${analysis.signal}**
+    let msg = `_________________________
 `;
-    msg += `💰 **Prix :** ${price.toFixed(5)}
+    msg += `📈 ${analysis.signal}**
+`;
+    msg += `🪙 **Prix :** ${price.toFixed(5)}
 `;
     msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%
 `;
