@@ -62,12 +62,7 @@ function setEntryPrice(price) {
   fs.writeFileSync(ENTRY_FILE, JSON.stringify({ price }));
 }
 function getEntryPrice() {
-  try {
-    const { price } = JSON.parse(fs.readFileSync(ENTRY_FILE));
-    return price;
-  } catch {
-    return null;
-  }
+  return entryPrice && entryDirection ? { price: entryPrice, direction: entryDirection } : null;
 }
 
 function detectCandlePattern(candle) {
@@ -703,15 +698,19 @@ app.get('/set-entry-ui', (req, res) => {
 
 
 
+// Endpoint pour enregistrer le point d’entrée
 app.post('/set-entry', (req, res) => {
-  const price = parseFloat(req.body.entryPrice);
-  if (!price || isNaN(price)) {
-    return res.status(400).send('❌ Prix invalide');
+  const entry = parseFloat(req.body.entry);
+  const direction = req.body.direction;
+
+  if (isNaN(entry) || !['BUY', 'SELL'].includes(direction)) {
+    return res.status(400).send('❌ Prix ou direction invalide');
   }
 
-  fs.writeFileSync('entryPrice.json', JSON.stringify({ price, timestamp: new Date() }, null, 2));
-  console.log(`✅ EntryPrice enregistré : ${price}`);
-  res.send(`<p>✅ Prix ${price} enregistré. <a href="/set-entry-ui">Retour</a></p>`);
+  entryPrice = entry;
+  entryDirection = direction;
+  console.log(`✅ Nouveau entry : ${entryPrice} (${entryDirection})`);
+  res.send('<p>✅ Point d’entrée enregistré avec succès. <a href="/set-entry-ui">Retour</a></p>');
 });
 
 
@@ -724,13 +723,12 @@ app.get('/get-entry', (req, res) => {
   }
 });
 
-app.get('/clear-entry', (req, res) => {
-  try {
-    if (fs.existsSync('entryPrice.json')) fs.unlinkSync('entryPrice.json');
-    res.send('✅ Entry price supprimé');
-  } catch (err) {
-    res.status(500).send('❌ Impossible de supprimer le entry price');
-  }
+// Endpoint pour réinitialiser le point d’entrée
+app.post('/clear-entry', (req, res) => {
+  entryPrice = null;
+  entryDirection = null;
+  console.log('🔄 Entry price réinitialisé');
+  res.send('<p>❌ Point d’entrée supprimé. <a href="/set-entry-ui">Retour</a></p>');
 });
 
 app.get('/', (req, res) => {
