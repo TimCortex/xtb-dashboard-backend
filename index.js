@@ -324,9 +324,7 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
   }
 
   if (reasoning.length) {
-    details.push(`🧠 Analyse sortie :
-${reasoning.join('
-')}`);
+    details.push(`🧠 Analyse sortie :\n${reasoning.join('\n')}`);
   }
 }
 
