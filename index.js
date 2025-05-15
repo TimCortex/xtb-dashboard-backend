@@ -363,8 +363,12 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     if (confidence < 60 && confidenceBear < 60) {
       reasons.push(`Confiance trop faible (📈 ${confidence.toFixed(1)}% / 📉 ${confidenceBear.toFixed(1)}%)`);
     }
+    if (volatilitySpike) {
+      reasons.push('Volatilité soudaine — prudence');
+    }
+  }
 
-    const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
+  const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
 const isRanging = recentRange < 0.0006;
 
 // ❌ Empêcher un signal fort en cas de range étroit
@@ -372,11 +376,6 @@ if (isRanging && (signal === 'BUY' || signal === 'STRONG BUY' || signal === 'SEL
   signal = 'WAIT';
   reasons.push(`Range étroit détecté (~${(recentRange / 0.0001).toFixed(1)} pips)`);
 }
-
-    if (volatilitySpike) {
-      reasons.push('Volatilité soudaine — prudence');
-    }
-  }
 
   return {
     timestamp: new Date().toISOString(),
@@ -400,7 +399,8 @@ if (isRanging && (signal === 'BUY' || signal === 'STRONG BUY' || signal === 'SEL
     totalScore: bull + bear,
     confidence,
     confidenceBear,
-    recentRange: Math.max(...close.slice(-6)) - Math.min(...close.slice(-6)),
+    recentRange,
+    isRanging,
     isVolatile: volatilitySpike,
     reason: reasons.length ? reasons.join(' | ') : null
   };
