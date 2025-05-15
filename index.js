@@ -634,19 +634,52 @@ const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
 });
 
 // Endpoint pour fixer un prix d'entrée manuel
-app.post('/set-entry', (req, res) => {
-  const { price } = req.body;
-  if (!price || isNaN(price)) return res.status(400).json({ error: 'Prix invalide' });
-  setEntryPrice(price);
-  res.json({ success: true, price });
+app.get('/set-entry-ui', (req, res) => {
+  res.send(`
+    <html>
+    <head>
+      <title>Définir le prix d'entrée</title>
+      <style>
+        body { font-family: sans-serif; background: #f7f7f7; padding: 40px; }
+        form { background: white; padding: 20px; border-radius: 8px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        label, input, button { display: block; width: 100%; margin-top: 10px; font-size: 1rem; }
+        button { margin-top: 20px; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+      </style>
+    </head>
+    <body>
+      <form method="POST" action="/set-entry">
+        <h2>📌 Définir le prix d'entrée</h2>
+        <label for="entryPrice">Prix d'entrée :</label>
+        <input type="number" step="0.00001" name="entryPrice" required />
+        <button type="submit">Enregistrer</button>
+      </form>
+    </body>
+    </html>
+  `);
 });
 
-// Endpoint pour consulter le prix d'entrée manuel
-app.get('/get-entry', (req, res) => {
-  const price = getEntryPrice();
-  if (!price) return res.status(404).json({ error: 'Aucune position enregistrée' });
-  res.json({ price });
+
+app.post('/set-entry', (req, res) => {
+  const price = parseFloat(req.body.entryPrice);
+  if (!price || isNaN(price)) {
+    return res.status(400).send('❌ Prix invalide');
+  }
+
+  fs.writeFileSync('entryPrice.json', JSON.stringify({ price, timestamp: new Date() }, null, 2));
+  console.log(`✅ EntryPrice enregistré : ${price}`);
+  res.send(`<p>✅ Prix ${price} enregistré. <a href="/set-entry-ui">Retour</a></p>`);
 });
+
+
+app.get('/get-entry', (req, res) => {
+  try {
+    const entryData = JSON.parse(fs.readFileSync('entryPrice.json', 'utf-8'));
+    res.json(entryData);
+  } catch {
+    res.status(404).json({ error: "Aucun prix d'entrée défini." });
+  }
+});
+
 
 app.get('/', (req, res) => {
   res.send('ZenScalp backend - analyse avec détection des figures de chandeliers et gestion web des annonces 🚀');
