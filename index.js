@@ -750,6 +750,135 @@ app.post('/clear-entry', (req, res) => {
   res.send('<p>❌ Point d’entrée supprimé. <a href="/set-entry-ui">Retour</a></p>');
 });
 
+app.get('/dashboard', (req, res) => {
+  const entry = getEntryPrice();
+  const annonces = loadAnnouncementWindows();
+
+  const entriesHTML = entry ? `
+    <div class="card">
+      <h3>🎯 Entry Price actif</h3>
+      <p><strong>Prix :</strong> ${entry.price}</p>
+      <p><strong>Direction :</strong> ${entry.direction}</p>
+      <form action="/clear-entry" method="POST">
+        <button class="danger" type="submit">❌ Supprimer</button>
+      </form>
+    </div>
+  ` : `
+    <div class="card warning">
+      <h3>⚠️ Aucun Entry Price</h3>
+      <p>Définissez un point d'entrée manuel pour améliorer l'analyse de contexte.</p>
+      <a href="/set-entry-ui">➕ Ajouter un Entry</a>
+    </div>
+  `;
+
+  const annoncesHTML = annonces.map(({ time }, idx) => `
+    <tr>
+      <td><input type="time" name="times" value="${time}" required></td>
+      <td><button type="button" onclick="removeRow(this)">🗑️</button></td>
+    </tr>
+  `).join('');
+
+  res.send(`
+    <html>
+      <head>
+        <title>ZenScalp - Dashboard</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f0f2f5;
+            padding: 40px;
+            color: #333;
+          }
+          h1 {
+            color: #111;
+            margin-bottom: 30px;
+          }
+          .section {
+            margin-bottom: 40px;
+          }
+          .card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+          }
+          .card.warning {
+            background: #fffbe6;
+            border-left: 5px solid #ffc107;
+          }
+          .danger {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+          }
+          td {
+            padding: 10px;
+          }
+          input[type="time"] {
+            padding: 6px;
+            width: 120px;
+          }
+          button {
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: #3498db;
+            color: white;
+            border: none;
+          }
+        </style>
+        <script>
+          function removeRow(button) {
+            const row = button.closest('tr');
+            row.parentNode.removeChild(row);
+          }
+
+          function collectTimes() {
+            const inputs = document.getElementsByName('times');
+            const data = [];
+            for (const input of inputs) {
+              if (input.value) data.push({ time: input.value });
+            }
+            document.getElementById('jsonData').value = JSON.stringify(data);
+            return true;
+          }
+        </script>
+      </head>
+      <body>
+        <h1>📊 ZenScalp Dashboard</h1>
+
+        <div class="section">
+          ${entriesHTML}
+        </div>
+
+        <div class="section card">
+          <h3>📅 Annonces économiques (heure de Paris)</h3>
+          <form method="POST" action="/update-announcements" onsubmit="return collectTimes()">
+            <table id="timesTable">${annoncesHTML}</table>
+            <button type="button" onclick="
+              const table = document.getElementById('timesTable');
+              const row = table.insertRow();
+              row.innerHTML = '<td><input type=time name=times required></td><td><button type=button onclick=removeRow(this)>🗑️</button></td>';
+            ">➕ Ajouter une annonce</button><br><br>
+            <input type="hidden" id="jsonData" name="data">
+            <button type="submit">💾 Enregistrer</button>
+          </form>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+
 app.get('/', (req, res) => {
   res.send('ZenScalp backend - analyse avec détection des figures de chandeliers et gestion web des annonces 🚀');
 });
