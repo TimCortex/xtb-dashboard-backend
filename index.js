@@ -187,4 +187,30 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
+// Ajout d'un entry manuellement
+app.post('/set-entry', (req, res) => {
+  const { price, direction } = req.body;
+  if (!price || !['BUY', 'SELL'].includes(direction)) {
+    return res.status(400).send('Paramètres invalides');
+  }
+  entryPrice = parseFloat(price);
+  entryDirection = direction;
+  res.send('✅ Entry enregistré');
+});
+
+// Suppression d’un entry manuel
+app.post('/clear-entry', (req, res) => {
+  entryPrice = null;
+  entryDirection = null;
+  res.send('❌ Entry supprimé');
+});
+
+app.get('/status', (req, res) => {
+  res.json({
+    entry: entryPrice ? { price: entryPrice, direction: entryDirection } : null,
+    paused: isPaused
+  });
+});
+
+
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp actif sur port ${PORT}`));
