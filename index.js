@@ -27,30 +27,6 @@ let entryDirection = null;
 let isPaused = false;
 let lastPauseMessage = null;
 
-app.get('/dashboard', (req, res) => {
-  const entryHTML = entryPrice ? `
-    <div class="card">
-      <h2>🎯 Entry Price</h2>
-      <p><strong>Prix :</strong> ${entryPrice.toFixed(5)}</p>
-      <p><strong>Direction :</strong> ${entryDirection}</p>
-      <form method="POST" action="/clear-entry">
-        <button class="danger">❌ Supprimer</button>
-      </form>
-    </div>
-  ` : `
-    <div class="card warning">
-      <h2>⚠️ Aucun Entry</h2>
-      <form method="POST" action="/set-entry">
-        <input type="number" name="price" step="0.00001" placeholder="Prix" required />
-        <select name="direction">
-          <option value="BUY">📈 BUY</option>
-          <option value="SELL">📉 SELL</option>
-        </select>
-        <button type="submit">✅ Ajouter</button>
-      </form>
-    </div>
-  `;
-
 function loadAnnouncementWindows() {
   try {
     return JSON.parse(fs.readFileSync(ANNOUNCEMENT_FILE, 'utf-8'));
@@ -228,23 +204,108 @@ app.get('/set-entry', (req, res) => {
   res.send(`✅ Entry défini via GET : ${price} (${direction})`);
 });
 
+app.get('/dashboard', (req, res) => {
+  const entryHTML = entryPrice ? `
+    <div class="card">
+      <h2>🎯 Entry Price</h2>
+      <p><strong>Prix :</strong> ${entryPrice.toFixed(5)}</p>
+      <p><strong>Direction :</strong> ${entryDirection}</p>
+      <form method="POST" action="/clear-entry">
+        <button class="danger">❌ Supprimer</button>
+      </form>
+    </div>
+  ` : `
+    <div class="card warning">
+      <h2>⚠️ Aucun Entry</h2>
+      <form method="POST" action="/set-entry">
+        <input type="number" name="price" step="0.00001" placeholder="Prix" required />
+        <select name="direction">
+          <option value="BUY">📈 BUY</option>
+          <option value="SELL">📉 SELL</option>
+        </select>
+        <button type="submit">✅ Ajouter</button>
+      </form>
+    </div>
+  `;
 
-// Ajout d'un entry manuellement
-app.post('/set-entry', (req, res) => {
-  const { price, direction } = req.body;
-  if (!price || !['BUY', 'SELL'].includes(direction)) {
-    return res.status(400).send('Paramètres invalides');
-  }
-  entryPrice = parseFloat(price);
-  entryDirection = direction;
-  res.send('✅ Entry enregistré');
+  const annonces = loadAnnouncementWindows();
+  const rows = annonces.map(({ time }) => `
+    <tr>
+      <td><input type="time" name="times" value="${time}" required></td>
+      <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
+    </tr>`).join('');
+
+  res.send(`
+    <html>
+    <head>
+      <title>ZenScalp Dashboard</title>
+      <style>
+        body { font-family: sans-serif; margin: 40px; background: #f4f4f4; }
+        .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .warning { background-color: #fff3cd; }
+        .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
+        input, select { margin-right: 10px; padding: 6px; }
+        table { border-collapse: collapse; margin-top: 20px; }
+        td { padding: 5px; }
+        button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
+      </style>
+    </head>
+    <body>
+      <h1>📊 ZenScalp Dashboard</h1>
+      ${entryHTML}
+      <div class="card">
+        <h2>🗓️ Annonces économiques</h2>
+        <form method="POST" action="/dashboard" onsubmit="return updateAnnouncements()">
+          <table id="timesTable">${rows}</table>
+          <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
+          <input type="hidden" name="annonces" id="jsonData">
+          <button type="submit">💾 Enregistrer</button>
+        </form>
+      </div>
+      <script>
+        function addRow() {
+          const table = document.getElementById('timesTable');
+          const row = table.insertRow();
+          row.innerHTML = '<td><input type="time" name="times" required></td>' +
+                          '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>';
+        }
+        function updateAnnouncements() {
+          const inputs = document.getElementsByName('times');
+          const data = [];
+          for (const input of inputs) {
+            if (input.value) data.push({ time: input.value });
+          }
+          document.getElementById('jsonData').value = JSON.stringify(data);
+          return true;
+        }
+      </script>
+    </body>
+    </html>
+  `);
 });
 
-// Suppression d’un entry manuel
+app.post('/dashboard', (req, res) => {
+  try {
+    const annonces = JSON.parse(req.body.annonces);
+    fs.writeFileSync(ANNOUNCEMENT_FILE, JSON.stringify(annonces, null, 2));
+    res.redirect('/dashboard');
+  } catch (err) {
+    res.status(400).send('Erreur dans les données JSON.');
+  }
+});
+
+app.post('/set-entry', (req, res) => {
+  const { price, direction } = req.body;
+  if (!price || !['BUY', 'SELL'].includes(direction)) return res.status(400).send('Paramètres invalides');
+  entryPrice = parseFloat(price);
+  entryDirection = direction;
+  res.redirect('/dashboard');
+});
+
 app.post('/clear-entry', (req, res) => {
   entryPrice = null;
   entryDirection = null;
-  res.send('❌ Entry supprimé');
+  res.redirect('/dashboard');
 });
 
 app.get('/status', (req, res) => {
