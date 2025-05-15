@@ -22,11 +22,12 @@ const IG_PASSWORD = 'Lyautey#1';
 const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
 
 const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
-let entryPrice = null;
-let entryDirection = null;
+global.entryPrice = null;
+global.entryDirection = null;
+global.entryTime = null;
+
 let isPaused = false;
 let lastPauseMessage = null;
-let entryTime = null;
 
 function loadAnnouncementWindows() {
   try {
@@ -292,8 +293,46 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
   }
 }
 
+// Analyse de sortie intelligente avec raisonnement détaillé
+if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !== 'undefined' && global.entryTime) {
+  const currentTime = Date.now();
+  const elapsed = (currentTime - global.entryTime) / 1000;
+  const pips = Math.round((price - global.entryPrice) * 10000);
+  const tolerance = 4;
+
+  const losing = (global.entryDirection === 'BUY' && pips < -tolerance) ||
+                 (global.entryDirection === 'SELL' && pips > tolerance);
+
+  const signalAligned = global.entryDirection === signal;
+  const trendOk = (global.entryDirection === 'BUY' && m15Trend === 'HAUSSIÈRE') ||
+                  (global.entryDirection === 'SELL' && m15Trend === 'BAISSIÈRE');
+
+  const reasoning = [];
+  if (!signalAligned) reasoning.push(`❌ Signal actuel : ${signal}, opposé à la position ${global.entryDirection}`);
+  if (!trendOk) reasoning.push(`❌ Tendance M15 : ${m15Trend}, non favorable à la position`);
+  if (confidence < 65) reasoning.push(`❌ Confiance actuelle faible (${confidence.toFixed(1)}%)`);
+  if (elapsed < 180) reasoning.push('🕒 Position récente (<3min) → patience recommandée');
+  if (Math.abs(pips) < tolerance) reasoning.push(`⚠️ Mouvement faible (${pips} pips)`);
+
+  if (elapsed < 180) {
+    details.push('🟡 Attente - position trop récente (<3min)');
+    reasoning.push('⏳ Trop tôt pour juger du trade');
+  } else if (losing && (!signalAligned || !trendOk || confidence < 65)) {
+    details.push('🔴 Sortie recommandée - perte confirmée et contexte affaibli.');
+  } else {
+    details.push('🟢 Attente conseillée - contexte toujours valide.');
+  }
+
+  if (reasoning.length) {
+    details.push('🧠 Analyse sortie :
+' + reasoning.join('
+'));
+  }
+}
+
 return { price, signal, confidence, confidenceBear, pattern, m15Trend, details, commentaire };
 }
+
 
 
 
@@ -373,9 +412,10 @@ app.get('/set-entry', (req, res) => {
   if (!price || !['BUY', 'SELL'].includes(direction)) {
     return res.status(400).send('Paramètres invalides (GET)');
   }
-  entryPrice = parseFloat(price);
-  entryDirection = direction;
-  entryTime = Date.now();
+ global.entryPrice = parseFloat(price);
+global.entryDirection = direction;
+global.entryTime = Date.now();
+
   res.send(`✅ Entry défini via GET : ${price} (${direction})`);
 });
 
@@ -472,9 +512,10 @@ app.post('/dashboard', (req, res) => {
 app.post('/set-entry', (req, res) => {
   const { price, direction } = req.body;
   if (!price || !['BUY', 'SELL'].includes(direction)) return res.status(400).send('Paramètres invalides');
-  entryPrice = parseFloat(price);
-  entryDirection = direction;
-  entryTime = Date.now();
+  global.entryPrice = parseFloat(price);
+global.entryDirection = direction;
+global.entryTime = Date.now();
+
   res.redirect('/dashboard');
 });
 
