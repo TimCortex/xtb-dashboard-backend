@@ -437,6 +437,10 @@ cron.schedule('* * * * *', async () => {
 `;
     if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}
 `;
+    if (analysis.details && analysis.details.length) {
+  msg += '\n🧾 **Détails analyse technique :**\n' + analysis.details.map(d => `• ${d}`).join('\n');
+}
+
 
     if (entryPrice && entryDirection) {
       const pips = Math.round((price - entryPrice) * 10000);
