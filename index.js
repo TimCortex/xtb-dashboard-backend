@@ -187,6 +187,24 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
+// Ajout GET /clear-entry pour test navigateur
+app.get('/clear-entry', (req, res) => {
+  entryPrice = null;
+  entryDirection = null;
+  res.send('❌ Entry supprimé via GET');
+});
+
+app.get('/set-entry', (req, res) => {
+  const { price, direction } = req.query;
+  if (!price || !['BUY', 'SELL'].includes(direction)) {
+    return res.status(400).send('Paramètres invalides (GET)');
+  }
+  entryPrice = parseFloat(price);
+  entryDirection = direction;
+  res.send(`✅ Entry défini via GET : ${price} (${direction})`);
+});
+
+
 // Ajout d'un entry manuellement
 app.post('/set-entry', (req, res) => {
   const { price, direction } = req.body;
