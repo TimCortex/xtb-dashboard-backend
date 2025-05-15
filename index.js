@@ -27,6 +27,30 @@ let entryDirection = null;
 let isPaused = false;
 let lastPauseMessage = null;
 
+app.get('/dashboard', (req, res) => {
+  const entryHTML = entryPrice ? `
+    <div class="card">
+      <h2>🎯 Entry Price</h2>
+      <p><strong>Prix :</strong> ${entryPrice.toFixed(5)}</p>
+      <p><strong>Direction :</strong> ${entryDirection}</p>
+      <form method="POST" action="/clear-entry">
+        <button class="danger">❌ Supprimer</button>
+      </form>
+    </div>
+  ` : `
+    <div class="card warning">
+      <h2>⚠️ Aucun Entry</h2>
+      <form method="POST" action="/set-entry">
+        <input type="number" name="price" step="0.00001" placeholder="Prix" required />
+        <select name="direction">
+          <option value="BUY">📈 BUY</option>
+          <option value="SELL">📉 SELL</option>
+        </select>
+        <button type="submit">✅ Ajouter</button>
+      </form>
+    </div>
+  `;
+
 function loadAnnouncementWindows() {
   try {
     return JSON.parse(fs.readFileSync(ANNOUNCEMENT_FILE, 'utf-8'));
