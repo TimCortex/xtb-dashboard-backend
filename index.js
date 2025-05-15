@@ -537,8 +537,11 @@ app.post('/update-announcements', (req, res) => {
 
 // ➕ Nouveau endpoint pour tester IG API
 app.get('/test-ig-price', async (req, res) => {
-  const IG_API_URL = 'https://demo-api.ig.com/gateway/deal';
-  const { IG_USERNAME, IG_PASSWORD, IG_API_KEY } = process.env;
+  const IG_API_URL = 'https://api.ig.com/gateway/deal/session';
+  // 🔐 Identifiants IG en clair (à ne pas exposer publiquement)
+const IG_USERNAME = 'timagnus';
+const IG_PASSWORD = 'Lyautey#1';
+const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
 
   try {
     // Connexion à IG
