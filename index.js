@@ -1,4 +1,4 @@
-// ZenScalp - position manuelle
+// ZenScalp - version visuelle enrichie avec intégration complète
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -6,881 +6,185 @@ const technicalIndicators = require('technicalindicators');
 const fs = require('fs');
 const path = require('path');
 const bodyParser = require('body-parser');
-let isPaused = false;
-let lastPauseMessage = null;
-let entryPrice = null;
-let entryDirection = null;
-
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
-const MODE_PERSISTANT = process.env.MODE_PERSISTANT === 'true';
-console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
-
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
-const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
+const WEBHOOK_URL = 'https://discord.com/api/webhooks/...';
 
+const IG_API_URL = 'https://api.ig.com/gateway/deal';
 const IG_USERNAME = 'timagnus';
 const IG_PASSWORD = 'Lyautey#1';
 const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
-const IG_API_URL = 'https://api.ig.com/gateway/deal';
 
 const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
+let entryPrice = null;
+let entryDirection = null;
+let isPaused = false;
+let lastPauseMessage = null;
+
 function loadAnnouncementWindows() {
   try {
     return JSON.parse(fs.readFileSync(ANNOUNCEMENT_FILE, 'utf-8'));
-  } catch (err) {
-    console.error('Erreur lecture annonces :', err.message);
+  } catch {
     return [];
   }
 }
-function saveAnnouncementWindows(data) {
-  fs.writeFileSync(ANNOUNCEMENT_FILE, JSON.stringify(data, null, 2));
-}
+
 function isDuringPauseWindow() {
-  const nowUTC = new Date();
-
-  // Convertir UTC → heure de Paris (CET/CEST automatiquement)
-  const nowParis = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
-  const currentParisMinutes = nowParis.getHours() * 60 + nowParis.getMinutes();
-
-  const windows = loadAnnouncementWindows();
-  return windows.some(({ time }) => {
+  const nowParis = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+  const currentMinutes = nowParis.getHours() * 60 + nowParis.getMinutes();
+  return loadAnnouncementWindows().some(({ time }) => {
     const [h, m] = time.split(':').map(Number);
-    const scheduledMinutes = h * 60 + m;
-
-    return Math.abs(currentParisMinutes - scheduledMinutes) <= 15;
+    return Math.abs(currentMinutes - (h * 60 + m)) <= 15;
   });
 }
 
-const ENTRY_FILE = path.resolve('entry.json');
-function setEntryPrice(price) {
-  fs.writeFileSync(ENTRY_FILE, JSON.stringify({ price }));
+async function getCurrentPrice() {
+  try {
+    const loginRes = await axios.post(`${IG_API_URL}/session`, {
+      identifier: IG_USERNAME,
+      password: IG_PASSWORD
+    }, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+
+    const cst = loginRes.headers['cst'];
+    const xSecurityToken = loginRes.headers['x-security-token'];
+
+    const res = await axios.get(`${IG_API_URL}/markets/CS.D.EURUSD.MINI.IP`, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'CST': cst,
+        'X-SECURITY-TOKEN': xSecurityToken,
+        'Accept': 'application/json'
+      }
+    });
+
+    return res.data.snapshot.offer ?? null;
+  } catch {
+    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+    const response = await axios.get(url);
+    return response.data?.last?.ask ?? null;
+  }
 }
-function getEntryPrice() {
-  return entryPrice && entryDirection ? { price: entryPrice, direction: entryDirection } : null;
-}
-
-function detectCandlePattern(candle) {
-  const body = Math.abs(candle.c - candle.o);
-  const range = candle.h - candle.l;
-  const upperWick = candle.h - Math.max(candle.c, candle.o);
-  const lowerWick = Math.min(candle.c, candle.o) - candle.l;
-  const bodyPct = body / range;
-  if (bodyPct > 0.85 && upperWick < range * 0.05 && lowerWick < range * 0.05) {
-    return candle.c < candle.o ? '🟥 Marubozu baissière — forte pression vendeuse' : '🟩 Marubozu haussière — forte pression acheteuse';
-  }
-  if (bodyPct < 0.15 && upperWick > range * 0.2 && lowerWick > range * 0.2) {
-    return '🟨 Doji — indécision sur le marché';
-  }
-  if (upperWick > body * 2 && lowerWick < body) {
-    return '💥 Shooting star — possible retournement baissier';
-  }
-  if (lowerWick > body * 2 && upperWick < body) {
-    return '🔨 Marteau — possible retournement haussier';
-  }
-  return null;
-}
-
-function detectMultiCandlePattern(candles) {
-  if (!candles || candles.length < 4) return null;
-
-  const [c1, c2, c3, c4] = candles.slice(-4);
-
-  // Avalement haussier
-  if (c3.c < c3.o && c4.c > c4.o && c4.c > c3.o && c4.o < c3.c) {
-    return '🟩 Avalement haussier — possible retournement à la hausse';
-  }
-
-  // Avalement baissier
-  if (c3.c > c3.o && c4.c < c4.o && c4.c < c3.o && c4.o > c3.c) {
-    return '🟥 Avalement baissier — possible retournement à la baisse';
-  }
-
-  // Trois soldats blancs
-  if ([c2, c3, c4].every(c => c.c > c.o)) {
-    return '🟩 Trois soldats blancs — continuation haussière forte';
-  }
-
-  // Trois corbeaux noirs
-  if ([c2, c3, c4].every(c => c.c < c.o)) {
-    return '🟥 Trois corbeaux noirs — continuation baissière forte';
-  }
-
-  // Harami haussier
-  if (c3.c < c3.o && c4.c > c4.o && c4.o > c3.c && c4.c < c3.o) {
-    return '🔄 Harami haussier — possible retournement';
-  }
-
-  // Harami baissier
-  if (c3.c > c3.o && c4.c < c4.o && c4.o < c3.c && c4.c > c3.o) {
-    return '🔄 Harami baissier — possible retournement';
-  }
-
-  return null;
-}
-
-function detectFVGs(data) {
-  const fvgZones = [];
-
-  for (let i = Math.max(2, data.length - 30); i < data.length; i++) {
-    const prev2 = data[i - 2];
-    const prev1 = data[i - 1];
-    const curr = data[i];
-
-    // FVG haussier : le plus bas actuel est au-dessus du plus haut d’il y a 2 bougies
-    if (curr.l > prev2.h) {
-      fvgZones.push({
-        type: 'bullish',
-        gapHigh: prev2.h,
-        gapLow: curr.l,
-        index: i,
-        time: new Date(curr.t).toLocaleTimeString()
-      });
-    }
-
-    // FVG baissier : le plus haut actuel est en dessous du plus bas d’il y a 2 bougies
-    if (curr.h < prev2.l) {
-      fvgZones.push({
-        type: 'bearish',
-        gapHigh: curr.h,
-        gapLow: prev2.l,
-        index: i,
-        time: new Date(curr.t).toLocaleTimeString()
-      });
-    }
-  }
-
-  return fvgZones;
-}
-
-let lastAnalysis = null;
 
 function calculateConfidence(bull, bear) {
   const total = bull + bear;
   return {
     confidence: total ? (bull / total) * 100 : 0,
-    confidenceBear: total ? (bear / total) * 100 : 0,
+    confidenceBear: total ? (bear / total) * 100 : 0
   };
+}
+
+function detectMultiCandlePattern(candles) {
+  const [c1, c2, c3, c4] = candles.slice(-4);
+  if (c3.c < c3.o && c4.c > c4.o && c4.c > c3.o && c4.o < c3.c) return '🟩 Avalement haussier';
+  if (c3.c > c3.o && c4.c < c4.o && c4.c < c3.o && c4.o > c3.c) return '🟥 Avalement baissier';
+  if ([c2, c3, c4].every(c => c.c > c.o)) return '🟩 Trois soldats blancs';
+  if ([c2, c3, c4].every(c => c.c < c.o)) return '🟥 Trois corbeaux noirs';
+  return null;
 }
 
 function analyzeM15(data) {
   const close = data.map(c => c.c);
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
-
   const price = close.at(-1);
-  const ema50Val = ema50.at(-1);
-  const ema100Val = ema100.at(-1);
-
-  const trend = (price > ema50Val && ema50Val > ema100Val)
-    ? 'HAUSSIÈRE'
-    : (price < ema50Val && ema50Val < ema100Val)
-    ? 'BAISSIÈRE'
-    : 'INDÉTERMINÉE';
-
-  return {
-    trend,
-    price,
-    ema50: ema50Val,
-    ema100: ema100Val
-  };
+  return (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) ? 'HAUSSIÈRE'
+       : (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) ? 'BAISSIÈRE'
+       : 'INDÉTERMINÉE';
 }
 
-async function fetchForexData15m() {
-  const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/15/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
-  const { data } = await axios.get(url);
-  return data.results.reverse();
-}
-
-async function fetchForexData() {
-  const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/5/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
-  const { data } = await axios.get(url);
-  return data.results.reverse();
-}
-
-// 🔄 getCurrentPrice avec IG + fallback Polygon
-async function getCurrentPrice() {
-  try {
-    const loginRes = await axios.post(`${IG_API_URL}/session`, {
-      identifier: IG_USERNAME,
-      password: IG_PASSWORD,
-    }, {
-      headers: {
-        'X-IG-API-KEY': IG_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      }
-    });
-
-    const cst = loginRes.headers['cst'];
-    const xSecurityToken = loginRes.headers['x-security-token'];
-
-    const marketRes = await axios.get(`${IG_API_URL}/markets/CS.D.EURUSD.MINI.IP`, {
-      headers: {
-        'X-IG-API-KEY': IG_API_KEY,
-        'CST': cst,
-        'X-SECURITY-TOKEN': xSecurityToken,
-        'Accept': 'application/json',
-      }
-    });
-
-    return marketRes.data.snapshot.offer ?? null;
-  } catch (err) {
-    console.error('⚠️ Erreur IG — fallback sur Polygon :', err.response?.data || err.message);
-    try {
-      const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
-      const response = await axios.get(url);
-      return response.data?.last?.ask ?? null;
-    } catch (polyErr) {
-      console.error('❌ Erreur fallback Polygon :', polyErr.message);
-      return null;
-    }
-  }
-}
-
-function detectLevels(data) {
-  const prices = data.map(d => d.c);
-  const supports = [], resistances = [];
-  for (let i = 2; i < prices.length - 2; i++) {
-    if (prices[i] < prices[i - 1] && prices[i] < prices[i + 1]) supports.push(prices[i]);
-    if (prices[i] > prices[i - 1] && prices[i] > prices[i + 1]) resistances.push(prices[i]);
-  }
-  return {
-    support: supports.length ? supports.sort((a, b) => b - a).slice(-2) : [],
-    resistance: resistances.length ? resistances.sort((a, b) => b - a).slice(0, 2) : []
-  };
-}
-
-function generateWarning(price, signal, levels, fvgList = []) {
-  const proximity = price * 0.0005;
-
-  // Support/Résistance
-  if (signal.includes('BUY')) {
-    const nearRes = levels.resistance.find(r => Math.abs(r - price) <= proximity);
-    if (nearRes) return `⚠️ Risque de retournement : prix proche résistance (${nearRes.toFixed(5)})`;
-  } else if (signal.includes('SELL')) {
-    const nearSup = levels.support.find(s => Math.abs(s - price) <= proximity);
-    if (nearSup) return `⚠️ Risque de retournement : prix proche support (${nearSup.toFixed(5)})`;
-  }
-
-  // Proximité d'un FVG
-  for (const fvg of fvgList) {
-    if (price >= fvg.gapLow - proximity && price <= fvg.gapHigh + proximity) {
-      return `⚠️ Proximité d'une zone FVG (${fvg.type === 'bullish' ? '⬆️ haussière' : '⬇️ baissière'})`;
-    }
-  }
-
-  return '';
-}
-
-function calculateIchimoku(data) {
-  const high = data.map(c => c.h);
-  const low = data.map(c => c.l);
-
-  const conversion = (Math.max(...high.slice(-9)) + Math.min(...low.slice(-9))) / 2;
-  const base = (Math.max(...high.slice(-26)) + Math.min(...low.slice(-26))) / 2;
-  const futureSpanA = (conversion + base) / 2;
-  const futureSpanB = (Math.max(...high.slice(-52)) + Math.min(...low.slice(-52))) / 2;
-
-  return { conversion, base, futureSpanA, futureSpanB };
-}
-
-function isImpulseCandle(candle, atrValue, multiplier = 2.5) {
-  const body = Math.abs(candle.c - candle.o);
-  const range = candle.h - candle.l;
-
-  // Bougie avec une grande amplitude et un corps dominant
-  return range > atrValue * multiplier && (body / range) > 0.7;
-}
-
-// ... (tout le haut du script reste inchangé jusqu'à la fonction analyze)
-
-function analyze(data, currentPrice = null, m15Trend = null) {
+function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
-  const price = currentPrice ?? close.at(-1);
-
-  const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
-  const atrVal = atr.at(-1);
-  const lastRange = high.at(-1) - low.at(-1);
-  const volatilitySpike = lastRange > atrVal * 1.5;
-
+  const price = close.at(-1);
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
-  const adx = technicalIndicators.ADX.calculate({ close, high, low, period: 14 });
   const rsi = technicalIndicators.RSI.calculate({ period: 14, values: close });
-  const macd = technicalIndicators.MACD.calculate({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
-  const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 14, signalPeriod: 3 });
-  const williamsR = technicalIndicators.WilliamsR.calculate({ high, low, close, period: 14 });
-  const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
-  const ichimoku = calculateIchimoku(data);
-
-  const ema50Val = ema50.at(-1);
-  const ema100Val = ema100.at(-1);
-  const adxVal = adx.at(-1)?.adx;
-  const rsiVal = rsi.at(-1);
-  const macdHist = macd.at(-1)?.histogram;
-  const stochVal = stoch.at(-1);
-  const williamsRVal = williamsR.at(-1);
-  const sarVal = sar.at(-1);
-  const ichimokuConv = ichimoku?.conversion;
-  const ichimokuBase = ichimoku?.base;
 
   let bull = 0, bear = 0;
-
-  if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
-  if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
-  if (ichimokuConv > ichimokuBase) bull++; else if (ichimokuConv < ichimokuBase) bear++;
-  if (rsiVal > 50) bull++; else if (rsiVal < 50) bear++;
-  if (macdHist > 0) bull++; else if (macdHist < 0) bear++;
-  if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
-  if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
-  if (sarVal < price) bull++; else if (sarVal > price) bear++;
-
-  const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
-  const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
-  if (structureBull) bull++; else if (structureBear) bear++;
+  if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) bull++; else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) bear++;
+  if (rsi.at(-1) > 50) bull++; else bear++;
+  if (m15Trend === 'HAUSSIÈRE') bull++; else if (m15Trend === 'BAISSIÈRE') bear++;
 
   const { confidence, confidenceBear } = calculateConfidence(bull, bear);
+  const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
+  const candles = data.slice(-4);
+  const pattern = detectMultiCandlePattern(candles);
 
-  let signal = 'WAIT';
-  if (confidence >= 80 && bull > bear) signal = 'STRONG BUY';
-  else if (confidence >= 60 && bull > bear) signal = 'BUY';
-  else if (confidenceBear >= 80 && bear > bull) signal = 'STRONG SELL';
-  else if (confidenceBear >= 60 && bear > bull) signal = 'SELL';
-
-  const reasons = [];
-
-  if (signal === 'WAIT') {
-    if (confidence < 60 && confidenceBear < 60) {
-      reasons.push(`Confiance trop faible (📈 ${confidence.toFixed(1)}% / 📉 ${confidenceBear.toFixed(1)}%)`);
-    }
-    if (volatilitySpike) {
-      reasons.push('Volatilité soudaine — prudence');
-    }
-  }
-
-  const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
-const isRanging = recentRange < 0.0006;
-
-// ❌ Empêcher un signal fort en cas de range étroit
-if (isRanging && (signal === 'BUY' || signal === 'STRONG BUY' || signal === 'SELL' || signal === 'STRONG SELL')) {
-  signal = 'WAIT';
-  reasons.push(`Range étroit détecté (~${(recentRange / 0.0001).toFixed(1)} pips)`);
+  return { price, signal, confidence, confidenceBear, pattern, m15Trend };
 }
 
-  return {
-    timestamp: new Date().toISOString(),
-    price,
-    signal,
-    trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE'
-           : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE'
-           : 'INDÉTERMINÉE',
-    rsi14: rsiVal,
-    macd: macd.at(-1),
-    stoch: stochVal,
-    williamsR: williamsRVal,
-    sar: sarVal,
-    ema50: ema50Val,
-    ema100: ema100Val,
-    adx: adxVal,
-    ichimoku,
-    m15Trend,
-    bullPoints: bull,
-    bearPoints: bear,
-    totalScore: bull + bear,
-    confidence,
-    confidenceBear,
-    recentRange,
-    isRanging,
-    isVolatile: volatilitySpike,
-    reason: reasons.length ? reasons.join(' | ') : null
-  };
+async function fetchData(period = 5) {
+  const today = new Date().toISOString().split('T')[0];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const { data } = await axios.get(url);
+  return data.results.reverse();
 }
 
-
-
-async function getCurrentPrice() {
-  try {
-    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
-    const response = await axios.get(url);
-    return response.data?.last?.ask ?? null;
-  } catch (err) {
-    console.error("❌ Erreur getCurrentPrice :", err.message);
-    return null;
-  }
-}
-
-// Modification de la fonction d'envoi du signal pour inclure le prix actuel
-async function sendDiscordAlert(analysis, levels, pattern = null) {
-  const warning = generateWarning(analysis.price, analysis.signal, levels);
-  const conf = `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%`;
-
-  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-    + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
-    + `📊 **Tendance :** ${analysis.trend}\n`
-    + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
-    + `${conf}\n`;
-
-  if (analysis.signal === 'WAIT' && analysis.reason) msg += `⚠️ ${analysis.reason}\n`;
-  if (warning) msg += `${warning}\n`;
-  if (pattern) msg += `${pattern}\n`;
-  if (analysis.isVolatile) msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
-  if (analysis.recentRange < 0.0010) msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
-
-  // Analyse contextuelle si position manuelle et en perte
-if (entryPrice && entryDirection) {
-  const pips = Math.round((analysis.price - entryPrice) * 10000);
-  const inLoss = (entryDirection === 'BUY' && pips < 0) || (entryDirection === 'SELL' && pips > 0);
-
-  if (inLoss) {
-  let contextScore = entryDirection === 'SELL' ? analysis.bearPoints : analysis.bullPoints;
-  const counterScore = entryDirection === 'SELL' ? analysis.bullPoints : analysis.bearPoints;
-
-  // 🔄 Pondération avec M15
-  let m15Alignment = '';
-  if ((entryDirection === 'BUY' && analysis.m15Trend === 'HAUSSIÈRE') ||
-      (entryDirection === 'SELL' && analysis.m15Trend === 'BAISSIÈRE')) {
-    contextScore += 1;
-    m15Alignment = '✅ alignée';
-  } else if ((entryDirection === 'BUY' && analysis.m15Trend === 'BAISSIÈRE') ||
-             (entryDirection === 'SELL' && analysis.m15Trend === 'HAUSSIÈRE')) {
-    contextScore -= 1;
-    m15Alignment = '⚠️ opposée';
-  } else {
-    m15Alignment = '❔ indéterminée';
-  }
-
-  const riskMessage = contextScore >= 6
-    ? '🔴 **Contexte défavorable — risque de prolongation**'
-    : contextScore >= 4
-    ? '🟡 **Contexte incertain — prudence recommandée**'
-    : '🟢 **Contexte favorable — rebond possible**';
-
-  msg += `\n⛳ **Entry price :** ${entryPrice.toFixed(5)} (${entryDirection})\n`;
-  msg += `📉 **Perte actuelle :** ${Math.abs(pips).toFixed(1)} pips\n\n`;
-  msg += `**🔍 Analyse de contexte (position en perte)**\n`;
-  msg += `${entryDirection === 'SELL' ? '📉' : '📈'} **Score direction : ${contextScore}/10**\n`;
-  msg += `${entryDirection === 'SELL' ? '📈' : '📉'} **Score opposé : ${counterScore}/10**\n`;
-  msg += `📊 **Tendance globale : ${analysis.trend}**\n`;
-  msg += `🕒 **Tendance M15 : ${analysis.m15Trend}** (${m15Alignment})\n`;
-  msg += `${riskMessage}\n`;
-}
-}
-
-
+async function sendToDiscord(msg) {
   await axios.post(WEBHOOK_URL, { content: msg });
-}
-
-
-function getParisTimeString() {
-  const now = new Date();
-  now.setHours(now.getHours() + 2);
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
-
-async function sendPauseAlert(time) {
-  const msg = `⏸️ **Pause ZenScalp activée**\nAnnonce économique prévue \nLes analyses sont suspendues temporairement.`;
-  console.log(msg);
-  await axios.post(WEBHOOK_URL, { content: msg });
-  lastPauseMessage = time;
-}
-
-async function sendResumeAlert() {
-  const msg = `✅ **Reprise des analyses ZenScalp**\nFin de la période d'annonce économique (${getParisTimeString()}).\nLes signaux reprennent normalement.`;
-  console.log(msg);
-  await axios.post(WEBHOOK_URL, { content: msg });
-  lastPauseMessage = null;
 }
 
 cron.schedule('* * * * *', async () => {
   try {
-    const pausedNow = isDuringPauseWindow();
-    const now = new Date();
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    if (pausedNow && !isPaused) {
-      isPaused = true;
-      if (lastPauseMessage !== currentTime) await sendPauseAlert(currentTime);
+    if (isDuringPauseWindow()) {
+      if (!isPaused) {
+        isPaused = true;
+        await sendToDiscord('⏸️ Analyse suspendue - annonce économique en cours.');
+      }
       return;
     }
-    if (!pausedNow && isPaused) {
+    if (isPaused) {
       isPaused = false;
-      await sendResumeAlert();
+      await sendToDiscord('✅ Reprise des analyses ZenScalp.');
     }
-    if (isPaused) return;
 
-    const candles = await fetchForexData();
-    const candles15m = await fetchForexData15m();
-    const currentPrice = await getCurrentPrice();
-    const levels = detectLevels(candles);
-    const m15 = analyzeM15(candles15m);
-    const analysis = analyze(candles, currentPrice, m15.trend);
-    if (!analysis) return;
-    lastAnalysis = analysis;
-    appendToCSV(analysis);
-    const recentCandles = candles.slice(-4);
-    const pattern = detectMultiCandlePattern(recentCandles);
-    console.log(`Analyse ${new Date().toLocaleTimeString()}: ${analysis.signal} (${analysis.trend})`);
-    await sendDiscordAlert(analysis, levels, pattern);
-  } catch (err) {
-    console.error('Erreur Cron :', err.message);
-  }
-});
+    const data5m = await fetchData(5);
+    const data15m = await fetchData(15);
+    const price = await getCurrentPrice();
+    const m15Trend = analyzeM15(data15m);
+    const analysis = generateVisualAnalysis(data5m, m15Trend);
 
-const csvPath = path.join(__dirname, 'signals.csv');
-function appendToCSV(analysis) {
-  const header = 'timestamp,price,signal,rsi,macd_hist,stoch_k,stoch_d,sar,ema50,ema100,trend';
-  const line = `${analysis.timestamp},${analysis.price},${analysis.signal},${analysis.rsi14},${analysis.macd?.histogram},${analysis.stoch?.k},${analysis.stoch?.d},${analysis.sar},${analysis.ema50},${analysis.ema100},${analysis.trend}\n`;
-  if (!fs.existsSync(csvPath)) fs.writeFileSync(csvPath, header + '\n');
-  fs.appendFileSync(csvPath, line);
-}
+    let msg = `📈 **Signal visuel : ${analysis.signal}**
+`;
+    msg += `💰 **Prix :** ${price.toFixed(5)}
+`;
+    msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%
+`;
+    msg += `🕒 **Tendance M15 :** ${analysis.m15Trend}
+`;
+    if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}
+`;
 
-app.get('/indicateurs', (req, res) => {
-  if (!lastAnalysis) return res.status(404).json({ error: 'Aucune analyse disponible' });
-  res.json(lastAnalysis);
-});
-
-app.get('/annonces', (req, res) => {
-  const annonces = loadAnnouncementWindows();
-  const rows = annonces.map(({ time }) => `
-    <tr>
-      <td><input type="time" name="times" value="${time}" required></td>
-      <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️ Supprimer</button></td>
-    </tr>`).join('');
-
-  res.send(`
-    <html>
-    <head>
-      <title>🗓️ Gestion des annonces économiques</title>
-      <style>
-        body { font-family: sans-serif; margin: 30px; background: #f4f4f4; }
-        table { border-collapse: collapse; margin-bottom: 10px; }
-        td { padding: 5px; }
-        input[type="time"] { padding: 5px; }
-        button { padding: 5px 10px; cursor: pointer; }
-      </style>
-    </head>
-    <body>
-      <h2>🗓️ Annonces économiques – heure de Paris</h2>
-      <form action="/update-announcements" method="POST" onsubmit="return collectTimes()">
-        <table id="timesTable">
-          ${rows}
-        </table>
-        <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
-        <input type="hidden" name="data" id="jsonData">
-        <button type="submit">💾 Enregistrer</button>
-      </form>
-      <script>
-        function addRow() {
-          const table = document.getElementById('timesTable');
-          const row = table.insertRow();
-          row.innerHTML = '<td><input type="time" name="times" required></td>' +
-                          '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️ Supprimer</button></td>';
-        }
-        function collectTimes() {
-          const inputs = document.getElementsByName('times');
-          const data = [];
-          for (const input of inputs) {
-            if (input.value) data.push({ time: input.value });
-          }
-          document.getElementById('jsonData').value = JSON.stringify(data, null, 2);
-          return true;
-        }
-      </script>
-    </body>
-    </html>
-  `);
-});
-
-app.get('/debug-annonces', (req, res) => {
-  try {
-    const data = loadAnnouncementWindows();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: 'Impossible de charger les annonces', details: err.message });
-  }
-});
-
-app.post('/update-announcements', (req, res) => {
-  try {
-    const jsonData = JSON.parse(req.body.data);
-    saveAnnouncementWindows(jsonData);
-    res.send('<p>✅ Données mises à jour. <a href="/annonces">Retour</a></p>');
-  } catch (err) {
-    res.status(400).send(`<p>❌ Erreur JSON : ${err.message} <a href="/annonces">Retour</a></p>`);
-  }
-});
-
-// ➕ Nouveau endpoint pour tester IG API
-app.get('/test-ig-price', async (req, res) => {
-  const IG_API_URL = 'https://api.ig.com/gateway/deal';
-  // 🔐 Identifiants IG en clair (à ne pas exposer publiquement)
-const IG_USERNAME = 'timagnus';
-const IG_PASSWORD = 'Lyautey#1';
-const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
-
-  try {
-    // Connexion à IG
-    const loginRes = await axios.post(`${IG_API_URL}/session`, {
-      identifier: IG_USERNAME,
-      password: IG_PASSWORD,
-    }, {
-      headers: {
-        'X-IG-API-KEY': IG_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+    if (entryPrice && entryDirection) {
+      const pips = Math.round((price - entryPrice) * 10000);
+      const inLoss = (entryDirection === 'BUY' && pips < 0) || (entryDirection === 'SELL' && pips > 0);
+      if (inLoss) {
+        msg += `
+⛳ **Entry :** ${entryPrice.toFixed(5)} (${entryDirection})
+`;
+        msg += `📉 **Perte actuelle :** ${Math.abs(pips)} pips
+`;
+        msg += analysis.confidence > 60 ? '🟢 Attente conseillée' : '🔴 Sortie recommandée';
       }
-    });
+    }
 
-    const cst = loginRes.headers['cst'];
-    const xSecurityToken = loginRes.headers['x-security-token'];
-
-    // Récupération du prix EUR/USD
-    const marketRes = await axios.get(`${IG_API_URL}/markets/CS.D.EURUSD.MINI.IP`, {
-      headers: {
-        'X-IG-API-KEY': IG_API_KEY,
-        'CST': cst,
-        'X-SECURITY-TOKEN': xSecurityToken,
-        'Accept': 'application/json',
-      }
-    });
-
-    const snapshot = marketRes.data.snapshot;
-    const priceInfo = {
-      bid: snapshot.bid,
-      offer: snapshot.offer,
-      updateTime: snapshot.updateTime,
-    };
-
-    console.log('✅ Prix IG reçu :', priceInfo);
-    res.json(priceInfo);
-  } catch (err) {
-    console.error('❌ Erreur test IG API :', err.response?.data || err.message);
-    res.status(500).json({ error: 'Erreur test IG', details: err.message });
+    await sendToDiscord(msg);
+  } catch (e) {
+    console.error('Erreur visuelle:', e.message);
   }
 });
 
-// Endpoint pour fixer un prix d'entrée manuel
-app.get('/set-entry-ui', (req, res) => {
-  const current = getEntryPrice();
-
-  res.send(`
-    <html>
-    <head>
-      <title>🎯 Entry Price - ZenScalp</title>
-      <style>
-        body { font-family: sans-serif; margin: 40px; background: #f9f9f9; }
-        input[type="number"] { padding: 6px; width: 150px; }
-        button { padding: 8px 16px; margin-top: 10px; cursor: pointer; }
-        .info { margin-top: 20px; color: #444; }
-      </style>
-    </head>
-    <body>
-      <h2>Définir manuellement un point d’entrée</h2>
-<form method="POST" action="/set-entry">
-  <label for="entry">Prix d’entrée :</label>
-  <input type="number" step="0.00001" name="entry" required>
-
-  <label for="direction">Sens :</label>
-  <select name="direction" required>
-    <option value="BUY">📈 Achat (BUY)</option>
-    <option value="SELL">📉 Vente (SELL)</option>
-  </select>
-
-  <button type="submit">✅ Définir le point d’entrée</button>
-</form>
-
-<form method="POST" action="/clear-entry" style="margin-top:20px;">
-  <button type="submit">❌ Supprimer le point d’entrée</button>
-</form>
-
-      ${current ? `
-        <div class="info">
-          🔒 Entry actuel : <strong>${current.price}</strong><br>
-          <form action="/clear-entry" method="POST" style="display:inline;">
-            <button type="submit" style="background:#f44336; color:white;">❌ Supprimer l'entry</button>
-          </form>
-        </div>
-      ` : `<div class="info">⚠️ Aucun entry price défini.</div>`}
-    </body>
-    </html>
-  `);
-});
-
-
-
-// Endpoint pour enregistrer le point d’entrée
-app.post('/set-entry', (req, res) => {
-  const entry = parseFloat(req.body.entry);
-  const direction = req.body.direction;
-
-  if (isNaN(entry) || !['BUY', 'SELL'].includes(direction)) {
-    return res.status(400).send('❌ Prix ou direction invalide');
-  }
-
-  entryPrice = entry;
-  entryDirection = direction;
-  console.log(`✅ Nouveau entry : ${entryPrice} (${entryDirection})`);
-  res.send('<p>✅ Point d’entrée enregistré avec succès. <a href="/set-entry-ui">Retour</a></p>');
-});
-
-
-app.get('/get-entry', (req, res) => {
-  try {
-    const entryData = JSON.parse(fs.readFileSync('entryPrice.json', 'utf-8'));
-    res.json(entryData);
-  } catch {
-    res.status(404).json({ error: "Aucun prix d'entrée défini." });
-  }
-});
-
-// Endpoint pour réinitialiser le point d’entrée
-app.post('/clear-entry', (req, res) => {
-  entryPrice = null;
-  entryDirection = null;
-  console.log('🔄 Entry price réinitialisé');
-  res.send('<p>❌ Point d’entrée supprimé. <a href="/set-entry-ui">Retour</a></p>');
-});
-
-app.get('/dashboard', (req, res) => {
-  const entry = getEntryPrice();
-  const annonces = loadAnnouncementWindows();
-
-  const entriesHTML = entry ? `
-    <div class="card">
-      <h3>🎯 Entry Price actif</h3>
-      <p><strong>Prix :</strong> ${entry.price}</p>
-      <p><strong>Direction :</strong> ${entry.direction}</p>
-      <form action="/clear-entry" method="POST">
-        <button class="danger" type="submit">❌ Supprimer</button>
-      </form>
-    </div>
-  ` : `
-    <div class="card warning">
-      <h3>⚠️ Aucun Entry Price</h3>
-      <p>Définissez un point d'entrée manuel pour améliorer l'analyse de contexte.</p>
-      <a href="/set-entry-ui">➕ Ajouter un Entry</a>
-    </div>
-  `;
-
-  const annoncesHTML = annonces.map(({ time }, idx) => `
-    <tr>
-      <td><input type="time" name="times" value="${time}" required></td>
-      <td><button type="button" onclick="removeRow(this)">🗑️</button></td>
-    </tr>
-  `).join('');
-
-  res.send(`
-    <html>
-      <head>
-        <title>ZenScalp - Dashboard</title>
-        <style>
-          body {
-            font-family: 'Segoe UI', sans-serif;
-            background: #f0f2f5;
-            padding: 40px;
-            color: #333;
-          }
-          h1 {
-            color: #111;
-            margin-bottom: 30px;
-          }
-          .section {
-            margin-bottom: 40px;
-          }
-          .card {
-            background: #fff;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-          }
-          .card.warning {
-            background: #fffbe6;
-            border-left: 5px solid #ffc107;
-          }
-          .danger {
-            background: #e74c3c;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-          }
-          td {
-            padding: 10px;
-          }
-          input[type="time"] {
-            padding: 6px;
-            width: 120px;
-          }
-          button {
-            cursor: pointer;
-            padding: 6px 10px;
-            border-radius: 6px;
-            background: #3498db;
-            color: white;
-            border: none;
-          }
-        </style>
-        <script>
-          function removeRow(button) {
-            const row = button.closest('tr');
-            row.parentNode.removeChild(row);
-          }
-
-          function collectTimes() {
-            const inputs = document.getElementsByName('times');
-            const data = [];
-            for (const input of inputs) {
-              if (input.value) data.push({ time: input.value });
-            }
-            document.getElementById('jsonData').value = JSON.stringify(data);
-            return true;
-          }
-        </script>
-      </head>
-      <body>
-        <h1>📊 ZenScalp Dashboard</h1>
-
-        <div class="section">
-          ${entriesHTML}
-        </div>
-
-        <div class="section card">
-          <h3>📅 Annonces économiques (heure de Paris)</h3>
-          <form method="POST" action="/update-announcements" onsubmit="return collectTimes()">
-            <table id="timesTable">${annoncesHTML}</table>
-            <button type="button" onclick="
-              const table = document.getElementById('timesTable');
-              const row = table.insertRow();
-              row.innerHTML = '<td><input type=time name=times required></td><td><button type=button onclick=removeRow(this)>🗑️</button></td>';
-            ">➕ Ajouter une annonce</button><br><br>
-            <input type="hidden" id="jsonData" name="data">
-            <button type="submit">💾 Enregistrer</button>
-          </form>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
-
-app.get('/', (req, res) => {
-  res.send('ZenScalp backend - analyse avec détection des figures de chandeliers et gestion web des annonces 🚀');
-});
-
-app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp sur le port ${PORT}`));
+app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp actif sur port ${PORT}`));
