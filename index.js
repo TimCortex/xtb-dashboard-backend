@@ -261,6 +261,8 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
+  const price = currentPrice ?? close.at(-1);
+
   const atr = technicalIndicators.ATR.calculate({ high, low, close, period: 14 });
   const atrVal = atr.at(-1);
   const lastRange = high.at(-1) - low.at(-1);
@@ -276,7 +278,6 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const sar = technicalIndicators.PSAR.calculate({ high, low, step: 0.02, max: 0.2 });
   const ichimoku = calculateIchimoku(data);
 
-  const price = currentPrice ?? close.at(-1);
   const ema50Val = ema50.at(-1);
   const ema100Val = ema100.at(-1);
   const adxVal = adx.at(-1)?.adx;
@@ -289,7 +290,6 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   const ichimokuBase = ichimoku?.base;
 
   let bull = 0, bear = 0;
-  let reason = '';
 
   if (price > ema50Val && ema50Val > ema100Val) bull++; else if (price < ema50Val && ema50Val < ema100Val) bear++;
   if (adxVal > 20) bull++; else if (adxVal < 20) bear++;
@@ -299,29 +299,43 @@ function analyze(data, currentPrice = null, m15Trend = null) {
   if (stochVal.k > stochVal.d) bull++; else if (stochVal.k < stochVal.d) bear++;
   if (williamsRVal > -50) bull++; else if (williamsRVal < -50) bear++;
   if (sarVal < price) bull++; else if (sarVal > price) bear++;
+
   const structureBull = close.slice(-3).every((v, i, arr) => i === 0 || v > arr[i - 1]);
   const structureBear = close.slice(-3).every((v, i, arr) => i === 0 || v < arr[i - 1]);
   if (structureBull) bull++; else if (structureBear) bear++;
 
-  const totalScore = bull + bear;
   const { confidence, confidenceBear } = calculateConfidence(bull, bear);
-  
+
   let signal = 'WAIT';
   if (confidence >= 80 && bull > bear) signal = 'STRONG BUY';
   else if (confidence >= 60 && bull > bear) signal = 'BUY';
   else if (confidenceBear >= 80 && bear > bull) signal = 'STRONG SELL';
   else if (confidenceBear >= 60 && bear > bull) signal = 'SELL';
-  else reason = `Confiance trop faible pour un signal clair (📈 ${confidence.toFixed(1)}% / 📉 ${confidenceBear.toFixed(1)}%)`;
 
-  const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
-  const isRanging = recentRange < 0.0006;
-  if (isRanging) reason += reason ? ' | Range étroit détecté' : 'Range étroit détecté';
+  const reasons = [];
+
+  if (signal === 'WAIT') {
+    if (confidence < 60 && confidenceBear < 60) {
+      reasons.push(`Confiance trop faible (📈 ${confidence.toFixed(1)}% / 📉 ${confidenceBear.toFixed(1)}%)`);
+    }
+
+    const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
+    if (recentRange < 0.0006) {
+      reasons.push(`Range étroit détecté (~${(recentRange / 0.0001).toFixed(1)} pips)`);
+    }
+
+    if (volatilitySpike) {
+      reasons.push('Volatilité soudaine — prudence');
+    }
+  }
 
   return {
     timestamp: new Date().toISOString(),
     price,
     signal,
-    trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE' : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE' : 'INDÉTERMINÉE',
+    trend: (price > ema50Val && ema50Val > ema100Val) ? 'HAUSSIÈRE'
+           : (price < ema50Val && ema50Val < ema100Val) ? 'BAISSIÈRE'
+           : 'INDÉTERMINÉE',
     rsi14: rsiVal,
     macd: macd.at(-1),
     stoch: stochVal,
@@ -334,14 +348,15 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     m15Trend,
     bullPoints: bull,
     bearPoints: bear,
-    totalScore,
+    totalScore: bull + bear,
     confidence,
     confidenceBear,
-    recentRange,
+    recentRange: Math.max(...close.slice(-6)) - Math.min(...close.slice(-6)),
     isVolatile: volatilitySpike,
-    reason
+    reason: reasons.length ? reasons.join(' | ') : null
   };
 }
+
 
 
 async function getCurrentPrice() {
@@ -360,30 +375,28 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   const warning = generateWarning(analysis.price, analysis.signal, levels);
   const conf = `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%`;
 
-  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**
-`
-    + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}
-`
-    + `📊 **Tendance :** ${analysis.trend}
-`
-    + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})
-`
-    + `${conf}
-`;
+  let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
+          + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
+          + `📊 **Tendance :** ${analysis.trend}\n`
+          + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
+          + `${conf}\n`;
 
-  if (analysis.reason) msg += `⚠️ ${analysis.reason}
-`;
-  if (warning) msg += `${warning}
-`;
-  if (pattern) msg += `${pattern}
-`;
-  if (analysis.isVolatile) msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable
-`;
-  if (analysis.recentRange < 0.0010) msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.
-`;
+  // Afficher reason seulement pour les signaux WAIT, et uniquement si différent du warning
+  if (analysis.signal === 'WAIT' && analysis.reason && analysis.reason !== warning) {
+    msg += `⚠️ ${analysis.reason}\n`;
+  }
+
+  if (warning) msg += `${warning}\n`;
+  if (pattern) msg += `${pattern}\n`;
+  if (analysis.isVolatile) msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
+
+  if (analysis.recentRange < 0.0010) {
+    msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
+  }
 
   await axios.post(WEBHOOK_URL, { content: msg });
 }
+
 function getParisTimeString() {
   const now = new Date();
   now.setHours(now.getHours() + 2);
