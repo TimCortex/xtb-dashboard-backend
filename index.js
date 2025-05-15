@@ -105,9 +105,6 @@ function analyzeM15(data) {
 }
 
 // ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
-
-// ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
-
 function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -194,8 +191,8 @@ function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
     details.push('⚠️ Proximité support (-0.5)');
   }
 
-  const confidence = (bull / (bull + bear)) * 100;
-  const confidenceBear = (bear / (bull + bear)) * 100;
+  let confidence = (bull / (bull + bear)) * 100;
+  let confidenceBear = (bear / (bull + bear)) * 100;
   const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
@@ -263,8 +260,11 @@ function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
   confidence = Math.min(confidence, 95);
   confidenceBear = Math.min(confidenceBear, 95);
 
+  if (commentaire) details.push(commentaire);
+
   return { price, signal, confidence, confidenceBear, pattern, m15Trend, details, commentaire };
 }
+
 
 
 
