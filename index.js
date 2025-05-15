@@ -1,4 +1,4 @@
-// ZenScalp - Logique pondérée
+// ZenScalp - IG API add
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -20,6 +20,11 @@ console.log(`🔁 Mode persistant activé : ${MODE_PERSISTANT}`);
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
+
+const IG_USERNAME = 'timagnus';
+const IG_PASSWORD = 'Lyautey#1';
+const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
+const IG_API_URL = 'https://api.ig.com/gateway/deal';
 
 const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
 function loadAnnouncementWindows() {
@@ -189,14 +194,43 @@ async function fetchForexData() {
   return data.results.reverse();
 }
 
+// 🔄 getCurrentPrice avec IG + fallback Polygon
 async function getCurrentPrice() {
   try {
-    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
-    const response = await axios.get(url);
-    return response.data?.last?.ask ?? null;
+    const loginRes = await axios.post(`${IG_API_URL}/session`, {
+      identifier: IG_USERNAME,
+      password: IG_PASSWORD,
+    }, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+
+    const cst = loginRes.headers['cst'];
+    const xSecurityToken = loginRes.headers['x-security-token'];
+
+    const marketRes = await axios.get(`${IG_API_URL}/markets/CS.D.EURUSD.MINI.IP`, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'CST': cst,
+        'X-SECURITY-TOKEN': xSecurityToken,
+        'Accept': 'application/json',
+      }
+    });
+
+    return marketRes.data.snapshot.offer ?? null;
   } catch (err) {
-    console.error("❌ Erreur getCurrentPrice :", err.message);
-    return null;
+    console.error('⚠️ Erreur IG — fallback sur Polygon :', err.response?.data || err.message);
+    try {
+      const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+      const response = await axios.get(url);
+      return response.data?.last?.ask ?? null;
+    } catch (polyErr) {
+      console.error('❌ Erreur fallback Polygon :', polyErr.message);
+      return null;
+    }
   }
 }
 
