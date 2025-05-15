@@ -413,7 +413,7 @@ Le rebond technique peut échouer sous une résistance technique.`);
 }
 }
 
-return { price, signal, confidence, confidenceBear, pattern, m15Trend, details, commentaire };
+return { price, signal, confidence, confidenceBear, pattern, trend15, details, commentaire };
 }
 
 
