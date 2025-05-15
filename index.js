@@ -371,7 +371,7 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
 
   const reasoning = [];
   if (!signalAligned) reasoning.push(`❌ Signal actuel : ${signal}, opposé à la position ${global.entryDirection}`);
-  if (!trendOk) reasoning.push(`❌ Tendance M15 : ${m15Trend}, non favorable à la position`);
+  if (!trendOk) reasoning.push(`❌ Tendance M15 : ${trend15}, non favorable à la position`);
   if (confidence < 65) reasoning.push(`❌ Confiance actuelle faible (${confidence.toFixed(1)}%)`);
   if (elapsed < 180) reasoning.push('🕒 Position récente (<3min) → patience recommandée');
   if (Math.abs(pips) < tolerance) reasoning.push(`⚠️ Mouvement faible (${pips} pips)`);
