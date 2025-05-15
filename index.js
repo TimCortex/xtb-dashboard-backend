@@ -276,7 +276,8 @@ if (typeof global.entryTime === 'undefined') global.entryTime = null;
 
   // Vérification de proximité même sans position ouverte
   let generalWarning = '';
-  let safeDistanceBonus = true;$1if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
+  let safeDistanceBonus = true;
+  if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
     generalWarning = '⚠️ Le prix est dans ou proche du nuage Ichimoku.';
     safeDistanceBonus = false;
   } else if (price > lastHigh - pipDistance) {
@@ -290,7 +291,6 @@ if (typeof global.entryTime === 'undefined') global.entryTime = null;
     // Réduction légère de la confiance si proximité technique
     confidence -= 0.3;
     confidenceBear -= 0.3;
-  }
 
 if (!generalWarning && safeDistanceBonus) {
     confidence += 0.3;
