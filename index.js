@@ -459,7 +459,7 @@ cron.schedule('* * * * *', async () => {
 `;
     msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%
 `;
-    msg += `🕒 **Tendance M15 :** ${analysis.m15Trend}
+    msg += `🕒 **Tendance :** ${analysis.trend5}
 `;
     if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}
 `;
