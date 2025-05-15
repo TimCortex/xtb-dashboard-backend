@@ -535,6 +535,52 @@ app.post('/update-announcements', (req, res) => {
   }
 });
 
+// ➕ Nouveau endpoint pour tester IG API
+app.get('/test-ig-price', async (req, res) => {
+  const IG_API_URL = 'https://demo-api.ig.com/gateway/deal';
+  const { IG_USERNAME, IG_PASSWORD, IG_API_KEY } = process.env;
+
+  try {
+    // Connexion à IG
+    const loginRes = await axios.post(`${IG_API_URL}/session`, {
+      identifier: IG_USERNAME,
+      password: IG_PASSWORD,
+    }, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+
+    const cst = loginRes.headers['cst'];
+    const xSecurityToken = loginRes.headers['x-security-token'];
+
+    // Récupération du prix EUR/USD
+    const marketRes = await axios.get(`${IG_API_URL}/markets/CS.D.EURUSD.MINI.IP`, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'CST': cst,
+        'X-SECURITY-TOKEN': xSecurityToken,
+        'Accept': 'application/json',
+      }
+    });
+
+    const snapshot = marketRes.data.snapshot;
+    const priceInfo = {
+      bid: snapshot.bid,
+      offer: snapshot.offer,
+      updateTime: snapshot.updateTime,
+    };
+
+    console.log('✅ Prix IG reçu :', priceInfo);
+    res.json(priceInfo);
+  } catch (err) {
+    console.error('❌ Erreur test IG API :', err.response?.data || err.message);
+    res.status(500).json({ error: 'Erreur test IG', details: err.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('ZenScalp backend - analyse avec détection des figures de chandeliers et gestion web des annonces 🚀');
 });
