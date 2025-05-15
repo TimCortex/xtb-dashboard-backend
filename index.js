@@ -1,4 +1,4 @@
-// ZenScalp - IG API add
+// ZenScalp - position manuelle
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -52,6 +52,19 @@ function isDuringPauseWindow() {
 
     return Math.abs(currentParisMinutes - scheduledMinutes) <= 15;
   });
+}
+
+const ENTRY_FILE = path.resolve('entry.json');
+function setEntryPrice(price) {
+  fs.writeFileSync(ENTRY_FILE, JSON.stringify({ price }));
+}
+function getEntryPrice() {
+  try {
+    const { price } = JSON.parse(fs.readFileSync(ENTRY_FILE));
+    return price;
+  } catch {
+    return null;
+  }
 }
 
 function detectCandlePattern(candle) {
@@ -410,26 +423,28 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   const conf = `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%`;
 
   let msg = `${analysis.signal.includes('SELL') ? '📉' : analysis.signal.includes('BUY') ? '📈' : '⏸️'} **${analysis.signal}**\n`
-          + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
-          + `📊 **Tendance :** ${analysis.trend}\n`
-          + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
-          + `${conf}\n`;
+    + `💰 **Prix actuel :** ${analysis.price.toFixed(5)}\n`
+    + `📊 **Tendance :** ${analysis.trend}\n`
+    + `🎯 **Score total :** ${analysis.totalScore}/10 (📈 ${analysis.bullPoints} / 📉 ${analysis.bearPoints})\n`
+    + `${conf}\n`;
 
-  // Afficher reason seulement pour les signaux WAIT, et uniquement si différent du warning
-  if (analysis.signal === 'WAIT' && analysis.reason && analysis.reason !== warning) {
-    msg += `⚠️ ${analysis.reason}\n`;
-  }
-
+  if (analysis.signal === 'WAIT' && analysis.reason) msg += `⚠️ ${analysis.reason}\n`;
   if (warning) msg += `${warning}\n`;
   if (pattern) msg += `${pattern}\n`;
   if (analysis.isVolatile) msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
+  if (analysis.recentRange < 0.0010) msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
 
-  if (analysis.recentRange < 0.0010) {
-    msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
+  const entryPrice = getEntryPrice();
+  if (entryPrice) {
+    const pnl = analysis.price - entryPrice;
+    const pips = Math.round(pnl * 10000);
+    msg += `💼 **Entrée manuelle :** ${entryPrice.toFixed(5)}\n`;
+    msg += `📉 Gain latent : ${pips > 0 ? '+' : ''}${pips} pips\n`;
   }
 
   await axios.post(WEBHOOK_URL, { content: msg });
 }
+
 
 function getParisTimeString() {
   const now = new Date();
@@ -616,6 +631,21 @@ const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
     console.error('❌ Erreur test IG API :', err.response?.data || err.message);
     res.status(500).json({ error: 'Erreur test IG', details: err.message });
   }
+});
+
+// Endpoint pour fixer un prix d'entrée manuel
+app.post('/set-entry', (req, res) => {
+  const { price } = req.body;
+  if (!price || isNaN(price)) return res.status(400).json({ error: 'Prix invalide' });
+  setEntryPrice(price);
+  res.json({ success: true, price });
+});
+
+// Endpoint pour consulter le prix d'entrée manuel
+app.get('/get-entry', (req, res) => {
+  const price = getEntryPrice();
+  if (!price) return res.status(404).json({ error: 'Aucune position enregistrée' });
+  res.json({ price });
 });
 
 app.get('/', (req, res) => {
