@@ -3,7 +3,7 @@ const axios = require('axios');
 const API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
 const IG_USERNAME = 'timagnus'; // ton nom d'utilisateur IG démo
 const IG_PASSWORD = 'Lyautey#1'; // à insérer manuellement pour test
-const IG_API_URL = 'https://demo-api.ig.com/gateway/deal';
+const IG_API_URL = 'https://api.ig.com/gateway/deal/session';
 
 async function getSession() {
   try {
