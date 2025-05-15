@@ -365,9 +365,13 @@ function analyze(data, currentPrice = null, m15Trend = null) {
     }
 
     const recentRange = Math.max(...close.slice(-6)) - Math.min(...close.slice(-6));
-    if (recentRange < 0.0006) {
-      reasons.push(`Range étroit détecté (~${(recentRange / 0.0001).toFixed(1)} pips)`);
-    }
+const isRanging = recentRange < 0.0006;
+
+// ❌ Empêcher un signal fort en cas de range étroit
+if (isRanging && (signal === 'BUY' || signal === 'STRONG BUY' || signal === 'SELL' || signal === 'STRONG SELL')) {
+  signal = 'WAIT';
+  reasons.push(`Range étroit détecté (~${(recentRange / 0.0001).toFixed(1)} pips)`);
+}
 
     if (volatilitySpike) {
       reasons.push('Volatilité soudaine — prudence');
@@ -438,23 +442,38 @@ if (entryPrice && entryDirection) {
   const inLoss = (entryDirection === 'BUY' && pips < 0) || (entryDirection === 'SELL' && pips > 0);
 
   if (inLoss) {
-    const contextScore = entryDirection === 'SELL' ? analysis.bearPoints : analysis.bullPoints;
-    const counterScore = entryDirection === 'SELL' ? analysis.bullPoints : analysis.bearPoints;
-    const contextTrend = analysis.trend.toLowerCase();
-    const riskMessage = contextScore >= 6
-      ? '🔴 **Contexte défavorable — risque de prolongation**'
-      : contextScore >= 4
-      ? '🟡 **Contexte incertain — prudence recommandée**'
-      : '🟢 **Contexte favorable — rebond possible**';
+  let contextScore = entryDirection === 'SELL' ? analysis.bearPoints : analysis.bullPoints;
+  const counterScore = entryDirection === 'SELL' ? analysis.bullPoints : analysis.bearPoints;
 
-    msg += `\n⛳ **Entry price :** ${entryPrice.toFixed(5)} (${entryDirection})\n`;
-    msg += `📉 **Perte actuelle :** ${Math.abs(pips).toFixed(1)} pips\n\n`;
-    msg += `**🔍 Analyse de contexte (position en perte)**\n`;
-    msg += `${entryDirection === 'SELL' ? '📉' : '📈'} **Score direction : ${contextScore}/10**\n`;
-    msg += `${entryDirection === 'SELL' ? '📈' : '📉'} **Score opposé : ${counterScore}/10**\n`;
-    msg += `📊 **Tendance globale : ${analysis.trend}**\n`;
-    msg += `${riskMessage}\n`;
+  // 🔄 Pondération avec M15
+  let m15Alignment = '';
+  if ((entryDirection === 'BUY' && analysis.m15Trend === 'HAUSSIÈRE') ||
+      (entryDirection === 'SELL' && analysis.m15Trend === 'BAISSIÈRE')) {
+    contextScore += 1;
+    m15Alignment = '✅ alignée';
+  } else if ((entryDirection === 'BUY' && analysis.m15Trend === 'BAISSIÈRE') ||
+             (entryDirection === 'SELL' && analysis.m15Trend === 'HAUSSIÈRE')) {
+    contextScore -= 1;
+    m15Alignment = '⚠️ opposée';
+  } else {
+    m15Alignment = '❔ indéterminée';
   }
+
+  const riskMessage = contextScore >= 6
+    ? '🔴 **Contexte défavorable — risque de prolongation**'
+    : contextScore >= 4
+    ? '🟡 **Contexte incertain — prudence recommandée**'
+    : '🟢 **Contexte favorable — rebond possible**';
+
+  msg += `\n⛳ **Entry price :** ${entryPrice.toFixed(5)} (${entryDirection})\n`;
+  msg += `📉 **Perte actuelle :** ${Math.abs(pips).toFixed(1)} pips\n\n`;
+  msg += `**🔍 Analyse de contexte (position en perte)**\n`;
+  msg += `${entryDirection === 'SELL' ? '📉' : '📈'} **Score direction : ${contextScore}/10**\n`;
+  msg += `${entryDirection === 'SELL' ? '📈' : '📉'} **Score opposé : ${counterScore}/10**\n`;
+  msg += `📊 **Tendance globale : ${analysis.trend}**\n`;
+  msg += `🕒 **Tendance M15 : ${analysis.m15Trend}** (${m15Alignment})\n`;
+  msg += `${riskMessage}\n`;
+}
 }
 
 
