@@ -686,7 +686,7 @@ app.get('/set-entry-ui', (req, res) => {
       ${current ? `
         <div class="info">
           🔒 Entry actuel : <strong>${current.price}</strong><br>
-          <form action="/clear-entry" method="GET" style="display:inline;">
+          <form action="/clear-entry" method="POST" style="display:inline;">
             <button type="submit" style="background:#f44336; color:white;">❌ Supprimer l'entry</button>
           </form>
         </div>
