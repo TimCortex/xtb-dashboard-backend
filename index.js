@@ -106,6 +106,8 @@ function analyzeM15(data) {
 
 // ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
 
+// ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
+
 function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
@@ -198,8 +200,72 @@ function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
 
-  return { price, signal, confidence, confidenceBear, pattern, m15Trend, details };
+  // Ajouter impact des patterns
+  if (pattern === '🟩 Avalement haussier') {
+    bull += 0.7;
+    details.push('✅ Pattern : Avalement haussier (+0.7)');
+  } else if (pattern === '🟥 Avalement baissier') {
+    bear += 0.7;
+    details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
+  } else if (pattern === '🟩 Trois soldats blancs') {
+    bull += 0.6;
+    details.push('✅ Pattern : Trois soldats blancs (+0.6)');
+  } else if (pattern === '🟥 Trois corbeaux noirs') {
+    bear += 0.6;
+    details.push('❌ Pattern : Trois corbeaux noirs (+0.6 bear)');
+  }
+
+  // Vérification de contradiction
+  let commentaire = null;
+  if ((signal === 'BUY' && pattern && pattern.includes('🟥')) || (signal === 'SELL' && pattern && pattern.includes('🟩'))) {
+    commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
+    details.push(commentaire);
+  }
+
+  // Analyse du sentiment global du marché
+  function evaluateMarketSentiment(data) {
+    const closes = data.map(c => c.c);
+    const opens = data.map(c => c.o);
+    const candles = data.slice(-24); // Dernières 2h sur M5
+    let altCount = 0;
+    let dojiCount = 0;
+    let prevDirection = null;
+
+    for (let c of candles) {
+      const body = Math.abs(c.c - c.o);
+      const candleDirection = c.c > c.o ? 'bull' : c.c < c.o ? 'bear' : 'doji';
+      if (body < (c.h - c.l) * 0.2) dojiCount++;
+      if (prevDirection && candleDirection !== prevDirection) altCount++;
+      if (candleDirection !== 'doji') prevDirection = candleDirection;
+    }
+
+    const altRatio = altCount / candles.length;
+    const dojiRatio = dojiCount / candles.length;
+    let sentiment = 0;
+
+    if (altRatio > 0.5) sentiment -= 0.4;
+    if (dojiRatio > 0.3) sentiment -= 0.3;
+    if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.0003) sentiment -= 0.3;
+    if (m15Trend === 'INDÉTERMINÉE') sentiment -= 0.4;
+
+    return Math.max(-1, Math.min(1, sentiment));
+  }
+
+  // Calcul du sentiment
+  const sentiment = evaluateMarketSentiment(data);
+  if (sentiment < 0) {
+    confidence *= 1 + sentiment;
+    confidenceBear *= 1 + sentiment;
+    details.push(`⚠️ Sentiment marché défavorable : ${sentiment.toFixed(2)} → ajustement du score`);
+  }
+
+  // Plafonnement dur
+  confidence = Math.min(confidence, 95);
+  confidenceBear = Math.min(confidenceBear, 95);
+
+  return { price, signal, confidence, confidenceBear, pattern, m15Trend, details, commentaire };
 }
+
 
 
 async function fetchData(period = 5) {
