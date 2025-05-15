@@ -148,9 +148,21 @@ if (typeof global.entryTime === 'undefined') global.entryTime = null;
   if (m15Trend === 'HAUSSIÈRE') {
     bull += 0.6;
     details.push('✅ M15 HAUSSIÈRE (+0.6)');
+
+    // Si la tendance M15 est haussière et que le prix est aussi au-dessus de la Kumo Ichimoku avec Tenkan > Kijun → confirmation forte
+    if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
+      bull += 0.6;
+      details.push('🔺 Tendance confirmée par Ichimoku (prix au-dessus Kumo + Tenkan>Kijun) (+0.6 bull)');
+    }
   } else if (m15Trend === 'BAISSIÈRE') {
     bear += 0.6;
     details.push('❌ M15 BAISSIÈRE (+0.6 bear)');
+
+    // Si la tendance M15 est baissière et que le prix est aussi sous la Kumo Ichimoku avec Tenkan < Kijun → confirmation forte
+    if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) {
+      bear += 0.6;
+      details.push('🔻 Tendance confirmée par Ichimoku (prix sous Kumo + Tenkan<Kijun) (+0.6 bear)');
+    }
   }
 
   // MACD
@@ -262,6 +274,28 @@ if (typeof global.entryTime === 'undefined') global.entryTime = null;
     details.push(`⚠️ Sentiment marché défavorable : ${sentiment.toFixed(2)} → ajustement du score`);
   }
 
+  // Vérification de proximité même sans position ouverte
+  let generalWarning = '';
+  let safeDistanceBonus = true;$1if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
+    generalWarning = '⚠️ Le prix est dans ou proche du nuage Ichimoku.';
+    safeDistanceBonus = false;
+  } else if (price > lastHigh - pipDistance) {
+    generalWarning = '⚠️ Le prix est proche d’une résistance.';
+    safeDistanceBonus = false;
+  } else if (price < lastLow + pipDistance) {
+    generalWarning = '⚠️ Le prix est proche d’un support.';
+    safeDistanceBonus = false;
+  }
+    details.push(generalWarning);
+    // Réduction légère de la confiance si proximité technique
+    confidence -= 0.3;
+    confidenceBear -= 0.3;
+  } else if (safeDistanceBonus) {
+    confidence += 0.3;
+    confidenceBear += 0.3;
+    details.push('✅ Aucun obstacle technique proche → léger bonus de confiance.');
+  }
+
   // Plafonnement dur
   confidence = Math.min(confidence, 95);
   confidenceBear = Math.min(confidenceBear, 95);
@@ -324,8 +358,32 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
   }
 
   if (reasoning.length) {
-    details.push(`🧠 Analyse sortie :\n${reasoning.join('\n')}`);
-  }
+    details.push(`🧠 Analyse sortie :
+${reasoning.join('
+')}`);
+
+    // Bloc personnalisé avec recommandation explicite
+    if (losing && (!signalAligned || !trendOk || confidence < 65)) {
+      let proximityWarning = '';
+      if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
+        proximityWarning = '⚠️ Le prix est proche ou dans le nuage Ichimoku, risque de retournement.';
+      } else if (price > lastHigh - pipDistance) {
+        proximityWarning = '⚠️ Le prix est proche d’une résistance majeure.';
+      } else if (price < lastLow + pipDistance) {
+        proximityWarning = '⚠️ Le prix est proche d’un support technique.';
+      }
+      details.push(`✅ Ma recommandation :
+🔴 Sortie probable, situation technique peu favorable.
+${proximityWarning}`);
+    } else if (!losing && !signalAligned) {
+      details.push(`✅ Ma recommandation :
+🔄 Attente risquée, mais encore défendable.
+Le rebond technique peut échouer sous une résistance technique.`);
+    } else {
+      details.push(`✅ Ma recommandation :
+🟢 Contexte global encore valide, poursuite possible du mouvement.`);
+    }
+}
 }
 
 return { price, signal, confidence, confidenceBear, pattern, m15Trend, details, commentaire };
