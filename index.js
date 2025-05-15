@@ -8,6 +8,9 @@ const path = require('path');
 const bodyParser = require('body-parser');
 let isPaused = false;
 let lastPauseMessage = null;
+let entryPrice = null;
+let entryDirection = null;
+
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -434,13 +437,31 @@ async function sendDiscordAlert(analysis, levels, pattern = null) {
   if (analysis.isVolatile) msg += `🌪️ **Volatilité élevée détectée** — signal possiblement instable\n`;
   if (analysis.recentRange < 0.0010) msg += `📏 Zone de range étroit (~${(analysis.recentRange / 0.0001).toFixed(1)} pips) — signal affaibli.\n`;
 
-  const entryPrice = getEntryPrice();
-  if (entryPrice) {
-    const pnl = analysis.price - entryPrice;
-    const pips = Math.round(pnl * 10000);
-    msg += `💼 **Entrée manuelle :** ${entryPrice.toFixed(5)}\n`;
-    msg += `📉 Gain latent : ${pips > 0 ? '+' : ''}${pips} pips\n`;
+  // Analyse contextuelle si position manuelle et en perte
+if (entryPrice && entryDirection) {
+  const pips = Math.round((analysis.price - entryPrice) * 10000);
+  const inLoss = (entryDirection === 'BUY' && pips < 0) || (entryDirection === 'SELL' && pips > 0);
+
+  if (inLoss) {
+    const contextScore = entryDirection === 'SELL' ? analysis.bearPoints : analysis.bullPoints;
+    const counterScore = entryDirection === 'SELL' ? analysis.bullPoints : analysis.bearPoints;
+    const contextTrend = analysis.trend.toLowerCase();
+    const riskMessage = contextScore >= 6
+      ? '🔴 **Contexte défavorable — risque de prolongation**'
+      : contextScore >= 4
+      ? '🟡 **Contexte incertain — prudence recommandée**'
+      : '🟢 **Contexte favorable — rebond possible**';
+
+    msg += `\n⛳ **Entry price :** ${entryPrice.toFixed(5)} (${entryDirection})\n`;
+    msg += `📉 **Perte actuelle :** ${Math.abs(pips).toFixed(1)} pips\n\n`;
+    msg += `**🔍 Analyse de contexte (position en perte)**\n`;
+    msg += `${entryDirection === 'SELL' ? '📉' : '📈'} **Score direction : ${contextScore}/10**\n`;
+    msg += `${entryDirection === 'SELL' ? '📈' : '📉'} **Score opposé : ${counterScore}/10**\n`;
+    msg += `📊 **Tendance globale : ${analysis.trend}**\n`;
+    msg += `${riskMessage}\n`;
   }
+}
+
 
   await axios.post(WEBHOOK_URL, { content: msg });
 }
@@ -635,28 +656,51 @@ const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
 
 // Endpoint pour fixer un prix d'entrée manuel
 app.get('/set-entry-ui', (req, res) => {
+  const current = getEntryPrice();
+
   res.send(`
     <html>
     <head>
-      <title>Définir le prix d'entrée</title>
+      <title>🎯 Entry Price - ZenScalp</title>
       <style>
-        body { font-family: sans-serif; background: #f7f7f7; padding: 40px; }
-        form { background: white; padding: 20px; border-radius: 8px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        label, input, button { display: block; width: 100%; margin-top: 10px; font-size: 1rem; }
-        button { margin-top: 20px; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        body { font-family: sans-serif; margin: 40px; background: #f9f9f9; }
+        input[type="number"] { padding: 6px; width: 150px; }
+        button { padding: 8px 16px; margin-top: 10px; cursor: pointer; }
+        .info { margin-top: 20px; color: #444; }
       </style>
     </head>
     <body>
-      <form method="POST" action="/set-entry">
-        <h2>📌 Définir le prix d'entrée</h2>
-        <label for="entryPrice">Prix d'entrée :</label>
-        <input type="number" step="0.00001" name="entryPrice" required />
-        <button type="submit">Enregistrer</button>
-      </form>
+      <h2>Définir manuellement un point d’entrée</h2>
+<form method="POST" action="/set-entry">
+  <label for="entry">Prix d’entrée :</label>
+  <input type="number" step="0.00001" name="entry" required>
+
+  <label for="direction">Sens :</label>
+  <select name="direction" required>
+    <option value="BUY">📈 Achat (BUY)</option>
+    <option value="SELL">📉 Vente (SELL)</option>
+  </select>
+
+  <button type="submit">✅ Définir le point d’entrée</button>
+</form>
+
+<form method="POST" action="/clear-entry" style="margin-top:20px;">
+  <button type="submit">❌ Supprimer le point d’entrée</button>
+</form>
+
+      ${current ? `
+        <div class="info">
+          🔒 Entry actuel : <strong>${current.price}</strong><br>
+          <form action="/clear-entry" method="GET" style="display:inline;">
+            <button type="submit" style="background:#f44336; color:white;">❌ Supprimer l'entry</button>
+          </form>
+        </div>
+      ` : `<div class="info">⚠️ Aucun entry price défini.</div>`}
     </body>
     </html>
   `);
 });
+
 
 
 app.post('/set-entry', (req, res) => {
@@ -680,6 +724,14 @@ app.get('/get-entry', (req, res) => {
   }
 });
 
+app.get('/clear-entry', (req, res) => {
+  try {
+    if (fs.existsSync('entryPrice.json')) fs.unlinkSync('entryPrice.json');
+    res.send('✅ Entry price supprimé');
+  } catch (err) {
+    res.status(500).send('❌ Impossible de supprimer le entry price');
+  }
+});
 
 app.get('/', (req, res) => {
   res.send('ZenScalp backend - analyse avec détection des figures de chandeliers et gestion web des annonces 🚀');
