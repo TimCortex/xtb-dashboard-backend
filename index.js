@@ -109,22 +109,96 @@ function generateVisualAnalysis(data, m15Trend = 'INDÉTERMINÉE') {
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
   const price = close.at(-1);
+
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
   const rsi = technicalIndicators.RSI.calculate({ period: 14, values: close });
+  const macd = technicalIndicators.MACD.calculate({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+  const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 5, signalPeriod: 3 });
+  const ichimoku = technicalIndicators.IchimokuCloud.calculate({ high, low, conversionPeriod: 9, basePeriod: 26, spanPeriod: 52, displacement: 26 });
 
-  let bull = 0, bear = 0;
-  if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) bull++; else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) bear++;
-  if (rsi.at(-1) > 50) bull++; else bear++;
-  if (m15Trend === 'HAUSSIÈRE') bull++; else if (m15Trend === 'BAISSIÈRE') bear++;
+  let bull = 0, bear = 0, details = [];
 
-  const { confidence, confidenceBear } = calculateConfidence(bull, bear);
+  // EMA
+  if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) {
+    bull += 0.8;
+    details.push('✅ EMA50 > EMA100 (+0.8)');
+  } else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) {
+    bear += 0.8;
+    details.push('❌ EMA50 < EMA100 (+0.8 bear)');
+  }
+
+  // RSI
+  if (rsi.at(-1) > 50) {
+    bull += 0.6;
+    details.push('✅ RSI > 50 (+0.6)');
+  } else {
+    bear += 0.6;
+    details.push('❌ RSI < 50 (+0.6 bear)');
+  }
+
+  // M15 Trend
+  if (m15Trend === 'HAUSSIÈRE') {
+    bull += 0.6;
+    details.push('✅ M15 HAUSSIÈRE (+0.6)');
+  } else if (m15Trend === 'BAISSIÈRE') {
+    bear += 0.6;
+    details.push('❌ M15 BAISSIÈRE (+0.6 bear)');
+  }
+
+  // MACD
+  const lastMACD = macd.at(-1);
+  if (lastMACD && lastMACD.MACD > lastMACD.signal) {
+    bull += 0.6;
+    details.push('✅ MACD haussier (+0.6)');
+  } else if (lastMACD) {
+    bear += 0.6;
+    details.push('❌ MACD baissier (+0.6 bear)');
+  }
+
+  // Stochastique
+  const lastStoch = stoch.at(-1);
+  if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) {
+    bull += 0.4;
+    details.push('✅ Stochastique haussier (+0.4)');
+  } else if (lastStoch && lastStoch.k < lastStoch.d && lastStoch.k > 20) {
+    bear += 0.4;
+    details.push('❌ Stochastique baissier (+0.4 bear)');
+  }
+
+  // Ichimoku breakout (prix > nuage + Tenkan > Kijun)
+  const lastIchi = ichimoku.at(-1);
+  if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
+    bull += 0.7;
+    details.push('✅ Ichimoku breakout (+0.7)');
+  } else if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) {
+    bear += 0.7;
+    details.push('❌ Ichimoku breakdown (+0.7 bear)');
+  }
+
+  // Proximité résistance/support (10 pips)
+  const lastHigh = high.slice(-20).reduce((a, b) => Math.max(a, b), 0);
+  const lastLow = low.slice(-20).reduce((a, b) => Math.min(a, b), Infinity);
+  const pipDistance = 0.0010; // 10 pips EUR/USD
+
+  if (price > lastHigh - pipDistance) {
+    bull -= 0.5;
+    details.push('⚠️ Proximité résistance (-0.5)');
+  }
+  if (price < lastLow + pipDistance) {
+    bear -= 0.5;
+    details.push('⚠️ Proximité support (-0.5)');
+  }
+
+  const confidence = ((bull / (bull + bear)) * 100).toFixed(1);
+  const confidenceBear = ((bear / (bull + bear)) * 100).toFixed(1);
   const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
 
-  return { price, signal, confidence, confidenceBear, pattern, m15Trend };
+  return { price, signal, confidence, confidenceBear, pattern, m15Trend, details };
 }
+
 
 async function fetchData(period = 5) {
   const today = new Date().toISOString().split('T')[0];
