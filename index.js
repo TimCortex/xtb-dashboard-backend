@@ -281,8 +281,10 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
   const trendOk = (global.entryDirection === 'BUY' && m15Trend === 'HAUSSIÈRE') ||
                   (global.entryDirection === 'SELL' && m15Trend === 'BAISSIÈRE');
 
-  if (elapsed < 120) {
-    details.push('🟡 Attente - position trop récente (<2min)');
+  if (elapsed < 180) {
+    details.push('🟡 Attente - position trop récente (<3min)');
+  } else if (Math.abs(pips) < 4) {
+    details.push('🟡 Attente - mouvement encore contenu (<4 pips)');
   } else if (losing && (!signalAligned || !trendOk || confidence < 65)) {
     details.push('🔴 Sortie recommandée - perte confirmée et contexte affaibli.');
   } else {
@@ -292,7 +294,6 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
 
 return { price, signal, confidence, confidenceBear, pattern, m15Trend, details, commentaire };
 }
-
 
 
 
