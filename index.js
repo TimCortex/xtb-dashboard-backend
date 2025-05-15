@@ -287,7 +287,7 @@ if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
     if (altRatio > 0.5) sentiment -= 0.4;
     if (dojiRatio > 0.3) sentiment -= 0.3;
     if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.0003) sentiment -= 0.3;
-    if (m15Trend === 'INDÉTERMINÉE') sentiment -= 0.4;
+    if (trend15 === 'INDÉTERMINÉE') sentiment -= 0.4;
 
     return Math.max(-1, Math.min(1, sentiment));
   }
@@ -341,8 +341,8 @@ if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !==
                  (global.entryDirection === 'SELL' && pips > tolerance);
 
   const signalAligned = global.entryDirection === signal;
-  const trendOk = (global.entryDirection === 'BUY' && m15Trend === 'HAUSSIÈRE') ||
-                  (global.entryDirection === 'SELL' && m15Trend === 'BAISSIÈRE');
+  const trendOk = (global.entryDirection === 'BUY' && trend15 === 'HAUSSIÈRE') ||
+                (global.entryDirection === 'SELL' && trend15 === 'BAISSIÈRE');
 
   if (elapsed < 180) {
     details.push('🟡 Attente - position trop récente (<3min)');
