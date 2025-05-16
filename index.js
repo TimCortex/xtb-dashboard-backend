@@ -254,17 +254,17 @@ const rangeMax = Math.max(...recentHighs);
 const rangeMin = Math.min(...recentLows);
 const rangeAmplitude = rangeMax - rangeMin;
 
-// Si range très étroit (< 0.0006 = 6 pips), on neutralise fortement
+
+ let totalScore = bull + bear;
+let confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
+let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
+
+  // Si range très étroit (< 0.0006 = 6 pips), on neutralise fortement
 if (rangeAmplitude < 0.0008) {
   details.push(`⚠️ Marché en range étroit (${(rangeAmplitude * 10000).toFixed(1)} pips sur 6 bougies) → neutralisation du signal`);
   confidence *= 0.5;
   confidenceBear *= 0.5;
 }
-
-
- let totalScore = bull + bear;
-let confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
-let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
 
   const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
   const candles = data.slice(-4);
