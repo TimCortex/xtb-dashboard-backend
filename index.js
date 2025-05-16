@@ -109,6 +109,7 @@ function analyzeM15(data) {
 function analyzeTrendM5M15(data5m, data15m) {
   const close5 = data5m.map(c => c.c);
   const close15 = data15m.map(c => c.c);
+
   const ema50_5m = technicalIndicators.EMA.calculate({ period: 50, values: close5 });
   const ema100_5m = technicalIndicators.EMA.calculate({ period: 100, values: close5 });
   const ema50_15m = technicalIndicators.EMA.calculate({ period: 50, values: close15 });
@@ -117,24 +118,23 @@ function analyzeTrendM5M15(data5m, data15m) {
   const price5 = close5.at(-1);
   const price15 = close15.at(-1);
 
-  const tolerance = 0.0002; // 2 pips
+  const margin = 0.00005; // tolérance de 0.5 pip pour éviter les faux neutres
 
-  let trend5 =
-    price5 < ema50_5m.at(-1) && ema50_5m.at(-1) + tolerance < ema100_5m.at(-1)
-      ? 'BAISSIÈRE'
-      : price5 > ema50_5m.at(-1) && ema50_5m.at(-1) > ema100_5m.at(-1) + tolerance
-      ? 'HAUSSIÈRE'
-      : 'INDÉTERMINÉE';
+  let trend5 = (price5 < ema50_5m.at(-1) - margin && ema50_5m.at(-1) < ema100_5m.at(-1) - margin)
+    ? 'BAISSIÈRE'
+    : (price5 > ema50_5m.at(-1) + margin && ema50_5m.at(-1) > ema100_5m.at(-1) + margin)
+    ? 'HAUSSIÈRE'
+    : 'INDÉTERMINÉE';
 
-  let trend15 =
-    price15 < ema50_15m.at(-1) && ema50_15m.at(-1) + tolerance < ema100_15m.at(-1)
-      ? 'BAISSIÈRE'
-      : price15 > ema50_15m.at(-1) && ema50_15m.at(-1) > ema100_15m.at(-1) + tolerance
-      ? 'HAUSSIÈRE'
-      : 'INDÉTERMINÉE';
+  let trend15 = (price15 < ema50_15m.at(-1) - margin && ema50_15m.at(-1) < ema100_15m.at(-1) - margin)
+    ? 'BAISSIÈRE'
+    : (price15 > ema50_15m.at(-1) + margin && ema50_15m.at(-1) > ema100_15m.at(-1) + margin)
+    ? 'HAUSSIÈRE'
+    : 'INDÉTERMINÉE';
 
   return { trend5, trend15 };
 }
+
 
 
 
