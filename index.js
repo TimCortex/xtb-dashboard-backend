@@ -233,8 +233,10 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('⚠️ Proximité support (-0.5)');
   }
 
-  let confidence = (bull / (bull + bear)) * 100;
-  let confidenceBear = (bear / (bull + bear)) * 100;
+ let totalScore = bull + bear;
+let confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
+let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
+
   const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
@@ -313,6 +315,42 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
 
   if (commentaire) details.push(commentaire);
 
+ // Logique de sortie intelligente complète
+if (global.entryPrice !== null && global.entryDirection && global.entryTime) {
+  const elapsed = (Date.now() - global.entryTime) / 1000; // secondes
+  const pips = Math.round((price - global.entryPrice) * 10000 * (global.entryDirection === 'BUY' ? 1 : -1));
+  const tolerance = 3;
+
+  const signalAligned = signal === global.entryDirection;
+  const trendOk = (global.entryDirection === 'BUY' && trend15 === 'HAUSSIÈRE') ||
+                  (global.entryDirection === 'SELL' && trend15 === 'BAISSIÈRE');
+
+  let recommandation = '';
+  let raisons = [];
+
+  if (elapsed < 180) {
+    recommandation = '🟡 Attente - position trop récente (<3min)';
+    raisons.push('⏳ Moins de 3 minutes écoulées');
+  } else if (pips < -tolerance) {
+    if (!signalAligned) raisons.push(`❌ Signal actuel : ${signal} ≠ position ${global.entryDirection}`);
+    if (!trendOk) raisons.push(`❌ Tendance M15 : ${trend15}, non favorable`);
+    if (confidence < 65) raisons.push(`❌ Confiance trop faible : ${confidence.toFixed(1)}%`);
+
+    if (raisons.length > 0) {
+      recommandation = `🔴 Sortie recommandée - perte de ${Math.abs(pips)} pips`;
+    } else {
+      recommandation = `🟢 Attente - contexte global encore favorable malgré ${Math.abs(pips)} pips de perte`;
+    }
+  } else {
+    recommandation = `🟢 Position encore valide - gain ou perte contenue (${pips} pips)`;
+  }
+
+  details.push('✅ Recommandation :\n' + recommandation);
+  if (raisons.length) details.push('🧠 Raisons :\n' + raisons.join('\n'));
+}
+
+
+
   return {
     price,
     signal,
@@ -375,20 +413,11 @@ cron.schedule('* * * * *', async () => {
     if (analysis.details && analysis.details.length) {
   msg += '\n🧾 **Détails analyse technique :**\n' + analysis.details.map(d => `• ${d}`).join('\n');
 }
-
-
     if (entryPrice && entryDirection) {
-      const pips = Math.round((price - entryPrice) * 10000);
-      const inLoss = (entryDirection === 'BUY' && pips < 0) || (entryDirection === 'SELL' && pips > 0);
-      if (inLoss) {
-        msg += `
-⛳ **Entry :** ${entryPrice.toFixed(5)} (${entryDirection})
-`;
-        msg += `📉 **Perte actuelle :** ${Math.abs(pips)} pips
-`;
-        msg += analysis.confidence > 60 ? '🟢 Attente conseillée' : '🔴 Sortie recommandée';
-      }
-    }
+  msg += `\n⛳ **Entry :** ${entryPrice.toFixed(5)} (${entryDirection})`;
+  msg += `\n📉 **Écart actuel :** ${Math.round((price - entryPrice) * 10000)} pips`;
+}
+
 
     await sendToDiscord(msg);
   } catch (e) {
