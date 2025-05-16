@@ -417,11 +417,23 @@ if (global.entryPrice !== null && global.entryDirection && global.entryTime) {
 async function fetchData(period = 5) {
   const today = new Date().toISOString().split('T')[0];
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
-  console.log(`[DEBUG] Bougies reçues (${period}m):`, data.length);
-
-  const { data } = await axios.get(url);
-  return data.results.reverse();
+  
+  try {
+    const response = await axios.get(url);
+    if (!response.data || !response.data.results || !Array.isArray(response.data.results)) {
+      console.error('[ERREUR] Données manquantes dans la réponse Polygon.io');
+      return [];
+    }
+    
+    const candles = response.data.results.reverse();
+    console.log(`[DEBUG] Bougies reçues (${period}m): ${candles.length}`);
+    return candles;
+  } catch (error) {
+    console.error('[ERREUR] fetchData échoué:', error.message);
+    return [];
+  }
 }
+
 
 async function sendToDiscord(msg) {
   await axios.post(WEBHOOK_URL, { content: msg });
