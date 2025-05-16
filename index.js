@@ -146,8 +146,8 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
 
   let bull = 0, bear = 0, details = [];
 
-// Ajouter les données d'entrée globales
-if (typeof global.entryTime === 'undefined') global.entryTime = null;
+  // Ajouter les données d'entrée globales
+  if (typeof global.entryTime === 'undefined') global.entryTime = null;
 
   // EMA
   if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) {
@@ -167,29 +167,27 @@ if (typeof global.entryTime === 'undefined') global.entryTime = null;
     details.push('❌ RSI < 50 (+0.6 bear)');
   }
 
-  // M15 Trend
   // Tendance combinée M5 / M15
-if (trend5 === 'HAUSSIÈRE') {
-  bull += 0.6;
-  details.push('✅ Tendance M5 haussière (+0.6)');
-} else if (trend5 === 'BAISSIÈRE') {
-  bear += 0.6;
-  details.push('❌ Tendance M5 baissière (+0.6 bear)');
-}
+  if (trend5 === 'HAUSSIÈRE') {
+    bull += 0.6;
+    details.push('✅ Tendance M5 haussière (+0.6)');
+  } else if (trend5 === 'BAISSIÈRE') {
+    bear += 0.6;
+    details.push('❌ Tendance M5 baissière (+0.6 bear)');
+  }
 
-if (trend15 === 'HAUSSIÈRE') {
-  bull += 0.4;
-  details.push('✅ Tendance M15 haussière (+0.4)');
-} else if (trend15 === 'BAISSIÈRE') {
-  bear += 0.4;
-  details.push('❌ Tendance M15 baissière (+0.4 bear)');
-}
+  if (trend15 === 'HAUSSIÈRE') {
+    bull += 0.4;
+    details.push('✅ Tendance M15 haussière (+0.4)');
+  } else if (trend15 === 'BAISSIÈRE') {
+    bear += 0.4;
+    details.push('❌ Tendance M15 baissière (+0.4 bear)');
+  }
 
-// Si contradiction
-if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
-    (trend5 === 'BAISSIÈRE' && trend15 === 'HAUSSIÈRE')) {
-  details.push('⚠️ Contradiction entre tendance M5 et M15');
-}
+  if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
+      (trend5 === 'BAISSIÈRE' && trend15 === 'HAUSSIÈRE')) {
+    details.push('⚠️ Contradiction entre tendance M5 et M15');
+  }
 
   // MACD
   const lastMACD = macd.at(-1);
@@ -211,7 +209,7 @@ if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
     details.push('❌ Stochastique baissier (+0.4 bear)');
   }
 
-  // Ichimoku breakout (prix > nuage + Tenkan > Kijun)
+  // Ichimoku breakout
   const lastIchi = ichimoku.at(-1);
   if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
     bull += 0.7;
@@ -221,10 +219,10 @@ if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
     details.push('❌ Ichimoku breakdown (+0.7 bear)');
   }
 
-  // Proximité résistance/support (10 pips)
+  // Proximité res/sup
   const lastHigh = high.slice(-20).reduce((a, b) => Math.max(a, b), 0);
   const lastLow = low.slice(-20).reduce((a, b) => Math.min(a, b), Infinity);
-  const pipDistance = 0.0010; // 10 pips EUR/USD
+  const pipDistance = 0.0010;
 
   if (price > lastHigh - pipDistance) {
     bull -= 0.5;
@@ -241,7 +239,7 @@ if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
 
-  // Ajouter impact des patterns
+  // Patterns
   if (pattern === '🟩 Avalement haussier') {
     bull += 0.7;
     details.push('✅ Pattern : Avalement haussier (+0.7)');
@@ -256,51 +254,38 @@ if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
     details.push('❌ Pattern : Trois corbeaux noirs (+0.6 bear)');
   }
 
-  // Vérification de contradiction
   let commentaire = null;
   if ((signal === 'BUY' && pattern && pattern.includes('🟥')) || (signal === 'SELL' && pattern && pattern.includes('🟩'))) {
     commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
     details.push(commentaire);
   }
 
-  // Analyse du sentiment global du marché
-  function evaluateMarketSentiment(data) {
-    const closes = data.map(c => c.c);
-    const opens = data.map(c => c.o);
-    const candles = data.slice(-24); // Dernières 2h sur M5
-    let altCount = 0;
-    let dojiCount = 0;
-    let prevDirection = null;
-
+  // Sentiment marché
+  const sentiment = (() => {
+    const candles = data.slice(-24);
+    let altCount = 0, dojiCount = 0, prev = null;
     for (let c of candles) {
       const body = Math.abs(c.c - c.o);
-      const candleDirection = c.c > c.o ? 'bull' : c.c < c.o ? 'bear' : 'doji';
+      const dir = c.c > c.o ? 'bull' : c.c < c.o ? 'bear' : 'doji';
       if (body < (c.h - c.l) * 0.2) dojiCount++;
-      if (prevDirection && candleDirection !== prevDirection) altCount++;
-      if (candleDirection !== 'doji') prevDirection = candleDirection;
+      if (prev && dir !== prev) altCount++;
+      if (dir !== 'doji') prev = dir;
     }
+    let score = 0;
+    if (altCount / candles.length > 0.5) score -= 0.4;
+    if (dojiCount / candles.length > 0.3) score -= 0.3;
+    if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.0003) score -= 0.3;
+    if (trend15 === 'INDÉTERMINÉE') score -= 0.4;
+    return Math.max(-1, Math.min(1, score));
+  })();
 
-    const altRatio = altCount / candles.length;
-    const dojiRatio = dojiCount / candles.length;
-    let sentiment = 0;
-
-    if (altRatio > 0.5) sentiment -= 0.4;
-    if (dojiRatio > 0.3) sentiment -= 0.3;
-    if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.0003) sentiment -= 0.3;
-    if (trend15 === 'INDÉTERMINÉE') sentiment -= 0.4;
-
-    return Math.max(-1, Math.min(1, sentiment));
-  }
-
-  // Calcul du sentiment
-  const sentiment = evaluateMarketSentiment(data);
   if (sentiment < 0) {
     confidence *= 1 + sentiment;
     confidenceBear *= 1 + sentiment;
     details.push(`⚠️ Sentiment marché défavorable : ${sentiment.toFixed(2)} → ajustement du score`);
   }
 
-  // Vérification de proximité même sans position ouverte
+  // Proximité technique
   let generalWarning = '';
   let safeDistanceBonus = true;
   if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
@@ -313,109 +298,33 @@ if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
     generalWarning = '⚠️ Le prix est proche d’un support.';
     safeDistanceBonus = false;
   }
-    details.push(generalWarning);
-    // Réduction légère de la confiance si proximité technique
+  if (generalWarning) details.push(generalWarning);
+  if (!safeDistanceBonus) {
     confidence -= 0.3;
     confidenceBear -= 0.3;
-
-if (!generalWarning && safeDistanceBonus) {
+  } else {
     confidence += 0.3;
     confidenceBear += 0.3;
     details.push('✅ Aucun obstacle technique proche → léger bonus de confiance.');
   }
 
-  // Plafonnement dur
   confidence = Math.min(confidence, 95);
   confidenceBear = Math.min(confidenceBear, 95);
 
   if (commentaire) details.push(commentaire);
 
-  // Ajouter logique de sortie intelligente
-if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !== 'undefined' && global.entryTime) {
-  const currentTime = Date.now();
-  const elapsed = (currentTime - global.entryTime) / 1000; // en secondes
-  const pips = Math.round((price - global.entryPrice) * 10000);
-  const tolerance = 3;
-
-  const losing = (global.entryDirection === 'BUY' && pips < -tolerance) ||
-                 (global.entryDirection === 'SELL' && pips > tolerance);
-
-  const signalAligned = global.entryDirection === signal;
-  const trendOk = (global.entryDirection === 'BUY' && trend15 === 'HAUSSIÈRE') ||
-                (global.entryDirection === 'SELL' && trend15 === 'BAISSIÈRE');
-
-  if (elapsed < 180) {
-    details.push('🟡 Attente - position trop récente (<3min)');
-  } else if (Math.abs(pips) < 4) {
-    details.push('🟡 Attente - mouvement encore contenu (<4 pips)');
-  } else if (losing && (!signalAligned || !trendOk || confidence < 65)) {
-    details.push('🔴 Sortie recommandée - perte confirmée et contexte affaibli.');
-  } else {
-    details.push('🟢 Attente conseillée - contexte toujours valide.');
-  }
+  return {
+    price,
+    signal,
+    confidence,
+    confidenceBear,
+    pattern,
+    trend5,
+    trend15,
+    details,
+    commentaire
+  };
 }
-
-// Analyse de sortie intelligente avec raisonnement détaillé
-if (typeof global.entryPrice !== 'undefined' && typeof global.entryDirection !== 'undefined' && global.entryTime) {
-  const currentTime = Date.now();
-  const elapsed = (currentTime - global.entryTime) / 1000;
-  const pips = Math.round((price - global.entryPrice) * 10000);
-  const tolerance = 4;
-
-  const losing = (global.entryDirection === 'BUY' && pips < -tolerance) ||
-                 (global.entryDirection === 'SELL' && pips > tolerance);
-
-  const signalAligned = global.entryDirection === signal;
-  const trendOk = (global.entryDirection === 'BUY' && m15Trend === 'HAUSSIÈRE') ||
-                  (global.entryDirection === 'SELL' && m15Trend === 'BAISSIÈRE');
-
-  const reasoning = [];
-  if (!signalAligned) reasoning.push(`❌ Signal actuel : ${signal}, opposé à la position ${global.entryDirection}`);
-  if (!trendOk) reasoning.push(`❌ Tendance M15 : ${trend15}, non favorable à la position`);
-  if (confidence < 65) reasoning.push(`❌ Confiance actuelle faible (${confidence.toFixed(1)}%)`);
-  if (elapsed < 180) reasoning.push('🕒 Position récente (<3min) → patience recommandée');
-  if (Math.abs(pips) < tolerance) reasoning.push(`⚠️ Mouvement faible (${pips} pips)`);
-
-  if (elapsed < 180) {
-    details.push('🟡 Attente - position trop récente (<3min)');
-    reasoning.push('⏳ Trop tôt pour juger du trade');
-  } else if (losing && (!signalAligned || !trendOk || confidence < 65)) {
-    details.push('🔴 Sortie recommandée - perte confirmée et contexte affaibli.');
-  } else {
-    details.push('🟢 Attente conseillée - contexte toujours valide.');
-  }
-
-  if (reasoning.length) {
-    details.push(`🧠 Analyse sortie :\n${reasoning.join('\n')}`);
-
-
-    // Bloc personnalisé avec recommandation explicite
-    if (losing && (!signalAligned || !trendOk || confidence < 65)) {
-      let proximityWarning = '';
-      if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
-        proximityWarning = '⚠️ Le prix est proche ou dans le nuage Ichimoku, risque de retournement.';
-      } else if (price > lastHigh - pipDistance) {
-        proximityWarning = '⚠️ Le prix est proche d’une résistance majeure.';
-      } else if (price < lastLow + pipDistance) {
-        proximityWarning = '⚠️ Le prix est proche d’un support technique.';
-      }
-      details.push(`✅ Ma recommandation :
-🔴 Sortie probable, situation technique peu favorable.
-${proximityWarning}`);
-    } else if (!losing && !signalAligned) {
-      details.push(`✅ Ma recommandation :
-🔄 Attente risquée, mais encore défendable.
-Le rebond technique peut échouer sous une résistance technique.`);
-    } else {
-      details.push(`✅ Ma recommandation :
-🟢 Contexte global encore valide, poursuite possible du mouvement.`);
-    }
-}
-}
-
-return { price, signal, confidence, confidenceBear, pattern, trend15, details, commentaire };
-}
-
 
 
 
