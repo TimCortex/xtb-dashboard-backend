@@ -416,7 +416,9 @@ if (global.entryPrice !== null && global.entryDirection && global.entryTime) {
 
 async function fetchData(period = 5) {
   const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=100&apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
+  console.log(`[DEBUG] Bougies reçues (${period}m):`, data.length);
+
   const { data } = await axios.get(url);
   return data.results.reverse();
 }
