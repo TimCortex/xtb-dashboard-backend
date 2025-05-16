@@ -274,28 +274,31 @@ let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
 
   // Sentiment marché
   const sentiment = (() => {
-    const candles = data.slice(-24);
-    let altCount = 0, dojiCount = 0, prev = null;
-    for (let c of candles) {
-      const body = Math.abs(c.c - c.o);
-      const dir = c.c > c.o ? 'bull' : c.c < c.o ? 'bear' : 'doji';
-      if (body < (c.h - c.l) * 0.2) dojiCount++;
-      if (prev && dir !== prev) altCount++;
-      if (dir !== 'doji') prev = dir;
-    }
-    let score = 0;
-    if (altCount / candles.length > 0.5) score -= 0.4;
-    if (dojiCount / candles.length > 0.3) score -= 0.3;
-    if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.0003) score -= 0.3;
-    if (trend15 === 'INDÉTERMINÉE') score -= 0.4;
-    return Math.max(-1, Math.min(1, score));
-  })();
+  const candles = data.slice(-24);
+  let altCount = 0, dojiCount = 0, prev = null;
 
-  if (sentiment < 0) {
-    confidence *= 1 + sentiment;
-    confidenceBear *= 1 + sentiment;
-    details.push(`⚠️ Sentiment marché défavorable : ${sentiment.toFixed(2)} → ajustement du score`);
+  for (let c of candles) {
+    const body = Math.abs(c.c - c.o);
+    const dir = c.c > c.o ? 'bull' : c.c < c.o ? 'bear' : 'doji';
+    if (body < (c.h - c.l) * 0.2) dojiCount++;
+    if (prev && dir !== prev) altCount++;
+    if (dir !== 'doji') prev = dir;
   }
+
+  let score = 0;
+
+  // ➤ Seuillage plus permissif
+  const altRatio = altCount / candles.length;
+  const dojiRatio = dojiCount / candles.length;
+
+  if (altRatio > 0.6) score -= 0.3;           // moins sévère qu'avant
+  if (dojiRatio > 0.4) score -= 0.2;          // dojis tolérés jusqu’à 40%
+  if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.00025) score -= 0.2;
+  if (trend15 === 'INDÉTERMINÉE') score -= 0.2; // avant c’était -0.4
+
+  return Math.max(-1, Math.min(1, score));
+})();
+
 
   // Proximité technique
   let generalWarning = '';
