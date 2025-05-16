@@ -255,7 +255,7 @@ const rangeMin = Math.min(...recentLows);
 const rangeAmplitude = rangeMax - rangeMin;
 
 // Si range très étroit (< 0.0006 = 6 pips), on neutralise fortement
-if (rangeAmplitude < 0.0006) {
+if (rangeAmplitude < 0.0008) {
   details.push(`⚠️ Marché en range étroit (${(rangeAmplitude * 10000).toFixed(1)} pips sur 6 bougies) → neutralisation du signal`);
   confidence *= 0.5;
   confidenceBear *= 0.5;
