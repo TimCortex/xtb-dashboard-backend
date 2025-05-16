@@ -418,13 +418,14 @@ function getISODateNDaysAgo(n) {
 }
 
 async function fetchData(period = 5) {
-  const from = getISODateNDaysAgo(7); // ← on prend 7 jours d'historique
+  const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies disponibles
   const to = new Date().toISOString().split('T')[0];
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
   console.log(`[DEBUG] Bougies ${period}m reçues : ${data.results.length}`);
   return data.results.reverse();
 }
+
 
 
 
