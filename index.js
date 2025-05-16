@@ -232,13 +232,16 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const pipDistance = 0.0010;
 
   if (price > lastHigh - pipDistance) {
-    bull -= 0.5;
-    details.push('⚠️ Proximité résistance (-0.5)');
-  }
+  bull -= 0.4;
+  bear += 0.2; // contexte favorable à une vente
+  details.push('⚠️ Proximité résistance (-0.4 bull, +0.2 bear)');
+}
+
   if (price < lastLow + pipDistance) {
-    bear -= 0.5;
-    details.push('⚠️ Proximité support (-0.5)');
-  }
+  bear -= 0.4;
+  bull += 0.2; // contexte favorable à un achat
+  details.push('⚠️ Proximité support (-0.4 bear, +0.2 bull)');
+}
 
  let totalScore = bull + bear;
 let confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
