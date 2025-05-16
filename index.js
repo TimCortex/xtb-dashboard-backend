@@ -426,6 +426,50 @@ async function fetchData(period = 5) {
   return data.results.reverse();
 }
 
+async function fetchDataFromIG(period = 5) {
+  try {
+    // 1. Login session
+    const sessionRes = await axios.post(`${IG_API_URL}/session`, {
+      identifier: IG_USERNAME,
+      password: IG_PASSWORD
+    }, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+
+    const cst = sessionRes.headers['cst'];
+    const xSecurityToken = sessionRes.headers['x-security-token'];
+
+    // 2. Fetch candles
+    const resolution = period === 5 ? 'MINUTE_5' : 'MINUTE_15';
+    const res = await axios.get(`${IG_API_URL}/prices/CS.D.EURUSD.MINI.IP/${resolution}/100`, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'CST': cst,
+        'X-SECURITY-TOKEN': xSecurityToken,
+        'Accept': 'application/json'
+      }
+    });
+
+    // 3. Convert to format compatible with TA libs
+    return res.data.prices.map(p => ({
+      t: new Date(p.snapshotTime).getTime(),
+      o: parseFloat(p.openPrice.ask),
+      h: parseFloat(p.highPrice.ask),
+      l: parseFloat(p.lowPrice.ask),
+      c: parseFloat(p.closePrice.ask),
+      v: p.lastTradedVolume
+    }));
+  } catch (err) {
+    console.error('❌ Erreur IG fetch:', err.message);
+    return [];
+  }
+}
+
+
 
 
 
@@ -447,8 +491,8 @@ cron.schedule('* * * * *', async () => {
       await sendToDiscord('✅ Reprise des analyses ZenScalp.');
     }
 
-    const data5m = await fetchData(5);
-    const data15m = await fetchData(15);
+    const data5m = await fetchDataFromIG(5);
+    const data15m = await fetchDataFromIG(15);
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
