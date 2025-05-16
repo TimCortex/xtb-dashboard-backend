@@ -232,7 +232,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   // Proximité res/sup
   const lastHigh = high.slice(-20).reduce((a, b) => Math.max(a, b), 0);
   const lastLow = low.slice(-20).reduce((a, b) => Math.min(a, b), Infinity);
-  const pipDistance = 0.0010;
+  const pipDistance = 0.0006;
 
   if (price > lastHigh - pipDistance) {
   bull -= 0.4;
