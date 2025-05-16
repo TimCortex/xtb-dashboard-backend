@@ -411,28 +411,21 @@ if (global.entryPrice !== null && global.entryDirection && global.entryTime) {
   };
 }
 
-
-
+function getISODateNDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split('T')[0];
+}
 
 async function fetchData(period = 5) {
-  const today = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/2024-04-01/${today}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
-  
-  try {
-    const response = await axios.get(url);
-    if (!response.data || !response.data.results || !Array.isArray(response.data.results)) {
-      console.error('[ERREUR] Données manquantes dans la réponse Polygon.io');
-      return [];
-    }
-    
-    const candles = response.data.results.reverse();
-    console.log(`[DEBUG] Bougies reçues (${period}m): ${candles.length}`);
-    return candles;
-  } catch (error) {
-    console.error('[ERREUR] fetchData échoué:', error.message);
-    return [];
-  }
+  const from = getISODateNDaysAgo(7); // ← on prend 7 jours d'historique
+  const to = new Date().toISOString().split('T')[0];
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
+  const { data } = await axios.get(url);
+  console.log(`[DEBUG] Bougies ${period}m reçues : ${data.results.length}`);
+  return data.results.reverse();
 }
+
 
 
 async function sendToDiscord(msg) {
