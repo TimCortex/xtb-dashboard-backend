@@ -118,22 +118,36 @@ function analyzeTrendM5M15(data5m, data15m) {
   const price5 = close5.at(-1);
   const price15 = close15.at(-1);
 
-  const margin = 0.00005; // tolérance de 0.5 pip pour éviter les faux neutres
+  const margin = 0.00005;
 
-  let trend5 = (price5 < ema50_5m.at(-1) - margin && ema50_5m.at(-1) < ema100_5m.at(-1) - margin)
-    ? 'BAISSIÈRE'
-    : (price5 > ema50_5m.at(-1) + margin && ema50_5m.at(-1) > ema100_5m.at(-1) + margin)
-    ? 'HAUSSIÈRE'
+  const e50_5 = ema50_5m.at(-1);
+  const e100_5 = ema100_5m.at(-1);
+  const e50_15 = ema50_15m.at(-1);
+  const e100_15 = ema100_15m.at(-1);
+
+  // Debug
+  console.log('[DEBUG TREND] M5:', { price5, e50_5, e100_5 });
+  console.log('[DEBUG TREND] M15:', { price15, e50_15, e100_15 });
+
+  let trend5 = (price5 !== undefined && e50_5 !== undefined && e100_5 !== undefined)
+    ? (price5 < e50_5 - margin && e50_5 < e100_5 - margin)
+      ? 'BAISSIÈRE'
+      : (price5 > e50_5 + margin && e50_5 > e100_5 + margin)
+        ? 'HAUSSIÈRE'
+        : 'INDÉTERMINÉE'
     : 'INDÉTERMINÉE';
 
-  let trend15 = (price15 < ema50_15m.at(-1) - margin && ema50_15m.at(-1) < ema100_15m.at(-1) - margin)
-    ? 'BAISSIÈRE'
-    : (price15 > ema50_15m.at(-1) + margin && ema50_15m.at(-1) > ema100_15m.at(-1) + margin)
-    ? 'HAUSSIÈRE'
+  let trend15 = (price15 !== undefined && e50_15 !== undefined && e100_15 !== undefined)
+    ? (price15 < e50_15 - margin && e50_15 < e100_15 - margin)
+      ? 'BAISSIÈRE'
+      : (price15 > e50_15 + margin && e50_15 > e100_15 + margin)
+        ? 'HAUSSIÈRE'
+        : 'INDÉTERMINÉE'
     : 'INDÉTERMINÉE';
 
   return { trend5, trend15 };
 }
+
 
 
 
