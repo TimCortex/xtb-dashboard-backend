@@ -109,6 +109,7 @@ function analyzeM15(data) {
 function analyzeTrendM5M15(data5m, data15m) {
   const close5 = data5m.map(c => c.c);
   const close15 = data15m.map(c => c.c);
+
   const ema50_5m = technicalIndicators.EMA.calculate({ period: 50, values: close5 });
   const ema100_5m = technicalIndicators.EMA.calculate({ period: 100, values: close5 });
   const ema50_15m = technicalIndicators.EMA.calculate({ period: 50, values: close15 });
@@ -117,16 +118,22 @@ function analyzeTrendM5M15(data5m, data15m) {
   const price5 = close5.at(-1);
   const price15 = close15.at(-1);
 
+  // Hybride : priorité au modèle strict, sinon base moyenne
   let trend5 = price5 > ema50_5m.at(-1) && ema50_5m.at(-1) > ema100_5m.at(-1) ? 'HAUSSIÈRE'
              : price5 < ema50_5m.at(-1) && ema50_5m.at(-1) < ema100_5m.at(-1) ? 'BAISSIÈRE'
+             : ema50_5m.at(-1) > ema100_5m.at(-1) ? 'HAUSSIÈRE'
+             : ema50_5m.at(-1) < ema100_5m.at(-1) ? 'BAISSIÈRE'
              : 'INDÉTERMINÉE';
 
   let trend15 = price15 > ema50_15m.at(-1) && ema50_15m.at(-1) > ema100_15m.at(-1) ? 'HAUSSIÈRE'
               : price15 < ema50_15m.at(-1) && ema50_15m.at(-1) < ema100_15m.at(-1) ? 'BAISSIÈRE'
+              : ema50_15m.at(-1) > ema100_15m.at(-1) ? 'HAUSSIÈRE'
+              : ema50_15m.at(-1) < ema100_15m.at(-1) ? 'BAISSIÈRE'
               : 'INDÉTERMINÉE';
 
   return { trend5, trend15 };
 }
+
 
 
 // ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
