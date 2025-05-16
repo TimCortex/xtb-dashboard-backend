@@ -322,13 +322,13 @@ if (global.entryPrice !== null && global.entryDirection && global.entryTime) {
   const tolerance = 3;
 
   const signalAligned = signal === global.entryDirection;
-  const trendOk = (global.entryDirection === 'BUY' && trend15 === 'HAUSSIÈRE') ||
-                  (global.entryDirection === 'SELL' && trend15 === 'BAISSIÈRE');
+  const trendOk = (global.entryDirection === 'BUY' && trend5 === 'HAUSSIÈRE') ||
+                  (global.entryDirection === 'SELL' && trend5 === 'BAISSIÈRE');
 
   let recommandation = '';
   let raisons = [];
 
-  if (elapsed < 180) {
+  if (elapsed < 360) {
     recommandation = '🟡 Attente - position trop récente (<3min)';
     raisons.push('⏳ Moins de 3 minutes écoulées');
   } else if (pips < -tolerance) {
