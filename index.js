@@ -246,6 +246,22 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   details.push('⚠️ Proximité support (-0.4 bear, +0.2 bull)');
 }
 
+  // Détection d'un range étroit sur les 6 dernières bougies
+const recentCloses = close.slice(-6);
+const recentHighs = high.slice(-6);
+const recentLows = low.slice(-6);
+const rangeMax = Math.max(...recentHighs);
+const rangeMin = Math.min(...recentLows);
+const rangeAmplitude = rangeMax - rangeMin;
+
+// Si range très étroit (< 0.0006 = 6 pips), on neutralise fortement
+if (rangeAmplitude < 0.0006) {
+  details.push(`⚠️ Marché en range étroit (${(rangeAmplitude * 10000).toFixed(1)} pips sur 6 bougies) → neutralisation du signal`);
+  confidence *= 0.5;
+  confidenceBear *= 0.5;
+}
+
+
  let totalScore = bull + bear;
 let confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
 let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
@@ -309,13 +325,14 @@ let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
   if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
     generalWarning = '⚠️ Le prix est dans ou proche du nuage Ichimoku.';
     safeDistanceBonus = false;
-  } else if (price > lastHigh - pipDistance) {
-    generalWarning = '⚠️ Le prix est proche d’une résistance.';
-    safeDistanceBonus = false;
-  } else if (price < lastLow + pipDistance) {
-    generalWarning = '⚠️ Le prix est proche d’un support.';
-    safeDistanceBonus = false;
-  }
+  } if (price > lastHigh - pipDistance) {
+  generalWarning = `⚠️ Le prix est proche d’une résistance (${lastHigh.toFixed(5)}).`;
+  safeDistanceBonus = false;
+} else if (price < lastLow + pipDistance) {
+  generalWarning = `⚠️ Le prix est proche d’un support (${lastLow.toFixed(5)}).`;
+  safeDistanceBonus = false;
+}
+
   if (generalWarning) details.push(generalWarning);
   if (!safeDistanceBonus) {
     confidence -= 0.3;
