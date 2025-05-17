@@ -47,11 +47,45 @@ function isDuringPauseWindow() {
   });
 }
 
+unction generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
+  const rows = [];
+  let capital = 1000;
+  for (let i = 0; i < days; i++) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    const day = date.getDay();
+    if (day === 0 || day === 6) continue; // Skip weekends
+    const objectif = +(capital * 0.013).toFixed(2);
+    rows.push({
+      date: date.toISOString().split('T')[0],
+      capital: +capital.toFixed(2),
+      objectif,
+      resultat: null,
+      ecart: null
+    });
+    capital += objectif;
+  }
+  return rows;
+}
+
 function loadPerformanceData() {
   try {
-    return JSON.parse(fs.readFileSync(PERFORMANCE_FILE, 'utf-8'));
-  } catch {
-    return {};
+    if (!fs.existsSync(PERFORMANCE_FILE)) {
+      const data = generatePerformanceData();
+      fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
+      return data;
+    }
+    const raw = fs.readFileSync(PERFORMANCE_FILE);
+    const parsed = JSON.parse(raw);
+    if (!parsed.length) {
+      const data = generatePerformanceData();
+      fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
+      return data;
+    }
+    return parsed;
+  } catch (e) {
+    console.error("❌ Erreur chargement performances:", e);
+    return [];
   }
 }
 
@@ -59,41 +93,36 @@ function savePerformanceData(data) {
   fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
 }
 
-function generatePerformanceTable(performanceData) {
-  const rows = [];
-  const startDate = new Date('2025-06-01');
-  const today = new Date();
-  let capital = 1000;
-  const dailyRate = 0.013;
-
-  while (startDate <= today) {
-    const day = startDate.toISOString().split('T')[0];
-    const weekday = startDate.getDay();
-    if (weekday > 0 && weekday < 6) {
-      const result = performanceData[day] ?? '';
-      const target = +(capital * dailyRate).toFixed(2);
-      const avance = result ? +(result - target).toFixed(2) : '';
-      const nextCapital = result ? +(capital + parseFloat(result)).toFixed(2) : capital;
-
-      const color = result
-        ? avance >= 0 ? '#d4edda' : '#f8d7da'
-        : 'transparent';
-
-      rows.push(`
-        <tr style="background-color: ${color}">
-          <td>${day}</td>
-          <td>${capital.toFixed(2)} €</td>
-          <td>${target.toFixed(2)} €</td>
-          <td><input type="number" step="0.01" name="results[${day}]" value="${result}" /></td>
-          <td>${avance !== '' ? avance.toFixed(2) + ' €' : ''}</td>
+function generatePerformanceTable(data) {
+  return `
+  <div class="card">
+    <h2>📈 Suivi de performance</h2>
+    <form method="POST" action="/save-performance">
+      <table border="1" cellpadding="5">
+        <tr>
+          <th>Date</th>
+          <th>Capital</th>
+          <th>Objectif</th>
+          <th>Résultat</th>
+          <th>Avance/Retard</th>
         </tr>
-      `);
-
-      capital = nextCapital;
-    }
-    startDate.setDate(startDate.getDate() + 1);
-  }
-  return rows.join('\n');
+        ${data.map((d, i) => {
+          const ecart = d.resultat != null ? +(d.resultat - d.objectif).toFixed(2) : null;
+          const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
+          return `<tr ${color}>
+            <td>${d.date}</td>
+            <td>${d.capital.toFixed(2)}€</td>
+            <td>${d.objectif.toFixed(2)}€</td>
+            <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
+            <td>${ecart != null ? ecart.toFixed(2) + '€' : ''}</td>
+          </tr>`;
+        }).join('')}
+      </table>
+      <br>
+      <button type="submit">💾 Enregistrer les performances</button>
+    </form>
+  </div>
+  `;
 }
 
 async function getCurrentPrice() {
@@ -582,10 +611,6 @@ app.get('/clear-entry', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
-  const annonces = loadAnnouncementWindows();
-  const performances = loadPerformanceData();
-  const performanceRows = generatePerformanceTable(performances);
-
   const entryHTML = entryPrice ? `
     <div class="card">
       <h2>🎯 Entry Price</h2>
@@ -609,11 +634,15 @@ app.get('/dashboard', (req, res) => {
     </div>
   `;
 
+  const annonces = loadAnnouncementWindows();
   const rows = annonces.map(({ time }) => `
     <tr>
       <td><input type="time" name="times" value="${time}" required></td>
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
     </tr>`).join('');
+
+  const perfData = loadPerformanceData();
+  const performanceTable = generatePerformanceTable(perfData);
 
   res.send(`
     <html>
@@ -625,15 +654,14 @@ app.get('/dashboard', (req, res) => {
         .warning { background-color: #fff3cd; }
         .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
         input, select { margin-right: 10px; padding: 6px; }
-        table { border-collapse: collapse; margin-top: 20px; width: 100%; }
-        td, th { padding: 5px; border: 1px solid #ccc; text-align: center; }
+        table { border-collapse: collapse; margin-top: 20px; }
+        td, th { padding: 5px; text-align: center; }
         button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
       </style>
     </head>
     <body>
       <h1>📊 ZenScalp Dashboard</h1>
       ${entryHTML}
-
       <div class="card">
         <h2>🗓️ Annonces économiques</h2>
         <form method="POST" action="/dashboard" onsubmit="return updateAnnouncements()">
@@ -643,20 +671,7 @@ app.get('/dashboard', (req, res) => {
           <button type="submit">💾 Enregistrer</button>
         </form>
       </div>
-
-      <div class="card">
-        <h2>📈 Suivi des performances journalières</h2>
-        <form method="POST" action="/save-performances">
-          <table>
-            <thead><tr><th>Jour</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr></thead>
-            <tbody>
-              ${performanceRows}
-            </tbody>
-          </table><br>
-          <button type="submit">💾 Sauvegarder</button>
-        </form>
-      </div>
-
+      ${performanceTable}
       <script>
         function addRow() {
           const table = document.getElementById('timesTable');
@@ -689,9 +704,15 @@ app.post('/dashboard', (req, res) => {
   }
 });
 
-app.post('/save-performances', (req, res) => {
-  const results = req.body.results || {};
-  savePerformanceData(results);
+app.post('/save-performance', (req, res) => {
+  const perfData = loadPerformanceData();
+  const updated = perfData.map((d, i) => {
+    const val = req.body[`resultat-${i}`];
+    const resultat = val ? parseFloat(val) : null;
+    const ecart = resultat != null ? +(resultat - d.objectif).toFixed(2) : null;
+    return { ...d, resultat, ecart };
+  });
+  savePerformanceData(updated);
   res.redirect('/dashboard');
 });
 
