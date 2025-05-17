@@ -66,15 +66,17 @@ function generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
 
   for (let i = 0; i < businessDays.length; i++) {
     const date = businessDays[i];
-    const objectif = +(capital * 0.013).toFixed(2);
-    rows.push({
-      date: date.toISOString().split('T')[0],
-      capital: +capital.toFixed(2),
-      objectif,
-      resultat: null,
-      ecart: null
-    });
-    capital += objectif;
+    const objectifCapital = capital * 1.013;
+const objectif = +(objectifCapital - capital).toFixed(2);
+rows.push({
+  date: date.toISOString().split('T')[0],
+  capitalObjectif: +objectifCapital.toFixed(2),
+  capital: +capital.toFixed(2),
+  objectif,
+  resultat: null,
+  ecart: null
+});
+capital = objectifCapital;
   }
   return rows;
 }
