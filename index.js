@@ -47,62 +47,45 @@ function isDuringPauseWindow() {
   });
 }
 
-function getWorkingDays(startDate, endDate) {
-  const days = [];
-  const current = new Date(startDate);
-  while (current <= endDate) {
-    const day = current.getDay();
-    if (day !== 0 && day !== 6) {
-      days.push(new Date(current));
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  return days;
-}
-
-function generatePerformanceData(startDate, capitalInitial = 1000) {
-  const endDate = new Date('2025-12-31');
-  const workingDays = getWorkingDays(new Date(startDate), endDate);
-  let performances = [];
-  let capital = capitalInitial;
-
-  for (let i = 0; i < workingDays.length; i++) {
-    const date = workingDays[i].toISOString().split('T')[0];
-    const prev = performances[i - 1];
-    let objectif;
-
-    if (prev && prev.resultat !== '') {
-      capital = prev.capital + parseFloat(prev.resultat);
-      const retard = prev.avance < 0 ? Math.abs(prev.avance) : 0;
-      objectif = parseFloat((capital * 0.013 + retard).toFixed(2));
-    } else if (prev) {
-      capital = prev.capital;
-      objectif = parseFloat((capital * 0.013).toFixed(2));
-    } else {
-      objectif = parseFloat((capital * 0.013).toFixed(2));
-    }
-
-    performances.push({
-      jour: i + 1,
-      date,
-      capital: parseFloat(capital.toFixed(2)),
+function generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
+  const rows = [];
+  let capital = 1000;
+  for (let i = 0; i < days; i++) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    const day = date.getDay();
+    if (day === 0 || day === 6) continue; // Skip weekends
+    const objectif = +(capital * 0.013).toFixed(2);
+    rows.push({
+      date: date.toISOString().split('T')[0],
+      capital: +capital.toFixed(2),
       objectif,
-      resultat: '',
-      avance: 0
+      resultat: null,
+      ecart: null
     });
+    capital += objectif;
   }
-
-  return performances;
+  return rows;
 }
 
 function loadPerformanceData() {
   try {
-    const data = JSON.parse(fs.readFileSync(PERFORMANCE_FILE, 'utf-8'));
-    return data;
-  } catch {
-    const newData = generatePerformanceData('2025-06-01');
-    fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(newData, null, 2));
-    return newData;
+    if (!fs.existsSync(PERFORMANCE_FILE)) {
+      const data = generatePerformanceData();
+      fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
+      return data;
+    }
+    const raw = fs.readFileSync(PERFORMANCE_FILE);
+    const parsed = JSON.parse(raw);
+    if (!parsed.length) {
+      const data = generatePerformanceData();
+      fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
+      return data;
+    }
+    return parsed;
+  } catch (e) {
+    console.error("❌ Erreur chargement performances:", e);
+    return [];
   }
 }
 
@@ -628,29 +611,38 @@ app.get('/clear-entry', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
-  const data = loadPerformanceData();
-  const updated = data.map((entry, i) => {
-    let avance = 0;
-    if (entry.resultat !== '') {
-      avance = parseFloat((parseFloat(entry.resultat) - entry.objectif).toFixed(2));
-      entry.avance = avance;
-    }
-    return entry;
-  });
-  savePerformanceData(updated);
+  const entryHTML = entryPrice ? `
+    <div class="card">
+      <h2>🎯 Entry Price</h2>
+      <p><strong>Prix :</strong> ${entryPrice.toFixed(5)}</p>
+      <p><strong>Direction :</strong> ${entryDirection}</p>
+      <form method="POST" action="/clear-entry">
+        <button class="danger">❌ Supprimer</button>
+      </form>
+    </div>
+  ` : `
+    <div class="card warning">
+      <h2>⚠️ Aucun Entry</h2>
+      <form method="POST" action="/set-entry">
+        <input type="number" name="price" step="0.00001" placeholder="Prix" required />
+        <select name="direction">
+          <option value="BUY">📈 BUY</option>
+          <option value="SELL">📉 SELL</option>
+        </select>
+        <button type="submit">✅ Ajouter</button>
+      </form>
+    </div>
+  `;
 
-  const rows = updated.map(entry => {
-    const couleur = entry.avance > 0 ? '#d4edda' : entry.avance < 0 ? '#f8d7da' : '#fff';
-    return `
-      <tr style="background:${couleur}">
-        <td>${entry.jour}</td>
-        <td>${entry.date}</td>
-        <td>${entry.capital}</td>
-        <td>${entry.objectif}</td>
-        <td><input type="number" step="0.01" name="resultat-${entry.jour}" value="${entry.resultat}" /></td>
-        <td>${entry.avance}</td>
-      </tr>`;
-  }).join('');
+  const annonces = loadAnnouncementWindows();
+  const rows = annonces.map(({ time }) => `
+    <tr>
+      <td><input type="time" name="times" value="${time}" required></td>
+      <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
+    </tr>`).join('');
+
+  const perfData = loadPerformanceData();
+  const performanceTable = generatePerformanceTable(perfData);
 
   res.send(`
     <html>
@@ -659,39 +651,57 @@ app.get('/dashboard', (req, res) => {
       <style>
         body { font-family: sans-serif; margin: 40px; background: #f4f4f4; }
         .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-        th { background-color: #eee; }
+        .warning { background-color: #fff3cd; }
+        .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
+        input, select { margin-right: 10px; padding: 6px; }
+        table { border-collapse: collapse; margin-top: 20px; }
+        td, th { padding: 5px; text-align: center; }
+        button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
       </style>
     </head>
     <body>
-      <h1>📊 Suivi des performances ZenScalp</h1>
-      <form method="POST" action="/dashboard">
-        <div class="card">
-          <table>
-            <thead>
-              <tr><th>Jour</th><th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-          <br><button type="submit">💾 Enregistrer les résultats</button>
-        </div>
-      </form>
+      <h1>📊 ZenScalp Dashboard</h1>
+      ${entryHTML}
+      <div class="card">
+        <h2>🗓️ Annonces économiques</h2>
+        <form method="POST" action="/dashboard" onsubmit="return updateAnnouncements()">
+          <table id="timesTable">${rows}</table>
+          <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
+          <input type="hidden" name="annonces" id="jsonData">
+          <button type="submit">💾 Enregistrer</button>
+        </form>
+      </div>
+      ${performanceTable}
+      <script>
+        function addRow() {
+          const table = document.getElementById('timesTable');
+          const row = table.insertRow();
+          row.innerHTML = '<td><input type="time" name="times" required></td>' +
+                          '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>';
+        }
+        function updateAnnouncements() {
+          const inputs = document.getElementsByName('times');
+          const data = [];
+          for (const input of inputs) {
+            if (input.value) data.push({ time: input.value });
+          }
+          document.getElementById('jsonData').value = JSON.stringify(data);
+          return true;
+        }
+      </script>
     </body>
     </html>
   `);
 });
 
 app.post('/dashboard', (req, res) => {
-  const data = loadPerformanceData();
-  for (let i = 0; i < data.length; i++) {
-    const key = `resultat-${data[i].jour}`;
-    if (req.body[key] !== undefined) {
-      data[i].resultat = req.body[key];
-    }
+  try {
+    const annonces = JSON.parse(req.body.annonces);
+    fs.writeFileSync(ANNOUNCEMENT_FILE, JSON.stringify(annonces, null, 2));
+    res.redirect('/dashboard');
+  } catch (err) {
+    res.status(400).send('Erreur dans les données JSON.');
   }
-  savePerformanceData(data);
-  res.redirect('/dashboard');
 });
 
 app.post('/save-performance', (req, res) => {
