@@ -126,22 +126,26 @@ function generatePerformanceTable(data) {
   <div class="card">
     <h2>📈 Suivi de performance</h2>
     <form method="POST" action="/save-performance">
-      <table border="1" cellpadding="5">
+      <table border="1" cellpadding="5" style="width: 100%;">
         <tr>
           <th>Date</th>
+          <th>Objectif Capital</th>
           <th>Capital</th>
           <th>Objectif</th>
           <th>Résultat</th>
           <th>Avance/Retard</th>
         </tr>
         ${data.map((d, i) => {
-          const color = d.ecart == null ? '' : d.ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
+          const idealCapital = 1000 * Math.pow(1.013, i);
+          const ecart = d.resultat != null ? +(d.resultat - d.objectif).toFixed(2) : null;
+          const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
           return `<tr ${color}>
             <td>${d.date}</td>
+            <td>${idealCapital.toFixed(2)}€</td>
             <td>${d.capital.toFixed(2)}€</td>
             <td>${d.objectif.toFixed(2)}€</td>
             <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
-            <td>${d.ecart != null ? d.ecart.toFixed(2) + '€' : ''}</td>
+            <td>${ecart != null ? ecart.toFixed(2) + '€' : ''}</td>
           </tr>`;
         }).join('')}
       </table>
