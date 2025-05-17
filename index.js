@@ -47,7 +47,7 @@ function isDuringPauseWindow() {
   });
 }
 
-unction generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
+function generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
   const rows = [];
   let capital = 1000;
   for (let i = 0; i < days; i++) {
