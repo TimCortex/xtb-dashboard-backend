@@ -124,67 +124,90 @@ function savePerformanceData(data) {
 }
 
 function generatePerformanceTable(data) {
-  const finalTarget = +(1000 * Math.pow(1.013, data.length)).toFixed(2); // Objectif final avec réinvestissement
-  
-  // Calcul du capital cumulé réel (somme capital + résultats renseignés)
-  let capitalCumule = 1000;
-  for (let i = 0; i < data.length; i++) {
-    if (i > 0 && data[i - 1].resultat != null) {
-      capitalCumule += data[i - 1].resultat;
+  const objectifFinal = data.at(-1)?.objectif
+    ? data.at(-1).capital + data.at(-1).objectif
+    : 24931.70;
+
+  let capitalCumul = 1000;
+  let joursRenseignés = 0;
+
+  const rows = data.map((d, i) => {
+    const resultat = d.resultat != null ? +d.resultat : null;
+    const ecart = resultat != null ? +(resultat - d.objectif).toFixed(2) : null;
+    if (resultat != null) {
+      capitalCumul += resultat;
+      joursRenseignés++;
     }
-    data[i].capitalReel = capitalCumule; // Pour affichage
-  }
 
-  const lastRenseigneIndex = data.findLastIndex(d => d.resultat != null);
-  const targetAtThisPoint = lastRenseigneIndex >= 0
-    ? +(1000 * Math.pow(1.013, lastRenseigneIndex + 1)).toFixed(2)
-    : 1000;
+    const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
 
-  const pourcentage = Math.min(100, (capitalCumule / finalTarget) * 100).toFixed(2);
-  const couleur = capitalCumule >= targetAtThisPoint ? '#28a745' : '#dc3545';
+    return `<tr ${color}>
+      <td>${d.date}</td>
+      <td>${d.capitalObjectif.toFixed(2)}€</td>
+      <td>${d.capital.toFixed(2)}€</td>
+      <td>${d.objectif.toFixed(2)}€</td>
+      <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
+      <td>${ecart != null ? ecart.toFixed(2) + '€' : ''}</td>
+    </tr>`;
+  });
+
+  const progress = Math.min((capitalCumul / objectifFinal) * 100, 100);
+  const barColor = capitalCumul >= objectifFinal * (joursRenseignés / data.length)
+    ? '#28a745' // vert
+    : '#dc3545'; // rouge
 
   return `
-  <div class="card">
-    <h2 style="display:flex; justify-content:space-between; align-items:center">
-      📈 Suivi de performance
-      <div style="flex:1; margin-left:20px;">
-        <div style="background:#e9ecef; border-radius:10px; overflow:hidden;">
-          <div style="
-            width:${pourcentage}%;
-            background:${couleur};
-            color:white;
-            text-align:center;
-            padding:5px 0;
-            font-weight:bold;
-            transition:width 0.3s ease;">
-            ${capitalCumule.toFixed(2)}€ / ${finalTarget.toLocaleString('fr-FR', {minimumFractionDigits:2})}€
-          </div>
-        </div>
-      </div>
-    </h2>
+  <style>
+    .progress-bar-container {
+      width: 100%;
+      background-color: #e0e0e0;
+      border-radius: 20px;
+      overflow: hidden;
+      height: 8px;
+      margin-bottom: 12px;
+      position: relative;
+    }
 
+    .progress-bar-fill {
+      height: 100%;
+      transition: width 1s ease-in-out, background-color 0.5s ease;
+      text-align: right;
+      white-space: nowrap;
+      color: #fff;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 6px;
+      opacity: 0;
+      animation: fadeIn 1s forwards;
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1;
+      }
+    }
+  </style>
+
+  <div class="card">
+    <h2>📈 Suivi de performance</h2>
+    <div class="progress-bar-container">
+      <div class="progress-bar-fill" style="width: ${progress.toFixed(2)}%; background-color: ${barColor};">
+        ${capitalCumul.toFixed(2)}€ / ${objectifFinal.toFixed(2)}€
+      </div>
+    </div>
     <form method="POST" action="/save-performance">
-      <table border="1" cellpadding="5" style="width:100%; text-align:center;">
+      <table border="1" cellpadding="5" style="width: 100%; text-align: center;">
         <tr>
           <th>Date</th>
           <th>Objectif Capital</th>
-          <th>Capital réel</th>
-          <th>Objectif</th>
+          <th>Capital</th>
+          <th>Objectif Jour</th>
           <th>Résultat</th>
           <th>Avance/Retard</th>
         </tr>
-        ${data.map((d, i) => {
-          const ecart = d.resultat != null ? +(d.resultat - d.objectif).toFixed(2) : null;
-          const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
-          return `<tr ${color}>
-            <td>${d.date}</td>
-            <td>${(1000 * Math.pow(1.013, i)).toFixed(2)}€</td>
-            <td>${d.capitalReel.toFixed(2)}€</td>
-            <td>${d.objectif.toFixed(2)}€</td>
-            <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
-            <td>${ecart != null ? ecart.toFixed(2) + '€' : ''}</td>
-          </tr>`;
-        }).join('')}
+        ${rows.join('')}
       </table>
       <br>
       <button type="submit">💾 Enregistrer les performances</button>
