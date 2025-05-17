@@ -51,46 +51,49 @@ function loadPerformanceData() {
   try {
     return JSON.parse(fs.readFileSync(PERFORMANCE_FILE, 'utf-8'));
   } catch {
-    return [];
+    return {};
   }
-}
-
-function generatePerformanceTable() {
-  const start = new Date('2025-06-01');
-  const end = new Date('2025-12-31');
-  const performanceData = loadPerformanceData();
-  const mapByDate = Object.fromEntries(performanceData.map(p => [p.date, p]));
-
-  const rows = [];
-  let capital = 1000;
-
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dateStr = d.toISOString().split('T')[0];
-    const day = d.getDay();
-    if (day === 0 || day === 6) continue; // Skip weekends
-
-    const target = +(capital * 0.013).toFixed(2);
-    const entry = mapByDate[dateStr] || { date: dateStr, result: '', note: '' };
-    const result = parseFloat(entry.result) || 0;
-    const delta = result - target;
-    capital = +(capital + result).toFixed(2);
-
-    const color = result === '' ? '' : delta >= 0 ? '#d4edda' : '#f8d7da';
-    rows.push(`
-      <tr style="background-color:${color}">
-        <td>${dateStr}</td>
-        <td>${capital.toFixed(2)}</td>
-        <td>${target.toFixed(2)}</td>
-        <td><input type="number" name="results[${dateStr}]" step="0.01" value="${entry.result}" style="width:80px"></td>
-        <td>${delta.toFixed(2)}</td>
-      </tr>
-    `);
-  }
-  return rows.join('');
 }
 
 function savePerformanceData(data) {
   fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
+}
+
+function generatePerformanceTable(performanceData) {
+  const rows = [];
+  const startDate = new Date('2025-06-01');
+  const today = new Date();
+  let capital = 1000;
+  const dailyRate = 0.013;
+
+  while (startDate <= today) {
+    const day = startDate.toISOString().split('T')[0];
+    const weekday = startDate.getDay();
+    if (weekday > 0 && weekday < 6) {
+      const result = performanceData[day] ?? '';
+      const target = +(capital * dailyRate).toFixed(2);
+      const avance = result ? +(result - target).toFixed(2) : '';
+      const nextCapital = result ? +(capital + parseFloat(result)).toFixed(2) : capital;
+
+      const color = result
+        ? avance >= 0 ? '#d4edda' : '#f8d7da'
+        : 'transparent';
+
+      rows.push(`
+        <tr style="background-color: ${color}">
+          <td>${day}</td>
+          <td>${capital.toFixed(2)} €</td>
+          <td>${target.toFixed(2)} €</td>
+          <td><input type="number" step="0.01" name="results[${day}]" value="${result}" /></td>
+          <td>${avance !== '' ? avance.toFixed(2) + ' €' : ''}</td>
+        </tr>
+      `);
+
+      capital = nextCapital;
+    }
+    startDate.setDate(startDate.getDate() + 1);
+  }
+  return rows.join('\n');
 }
 
 async function getCurrentPrice() {
@@ -579,6 +582,10 @@ app.get('/clear-entry', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
+  const annonces = loadAnnouncementWindows();
+  const performances = loadPerformanceData();
+  const performanceRows = generatePerformanceTable(performances);
+
   const entryHTML = entryPrice ? `
     <div class="card">
       <h2>🎯 Entry Price</h2>
@@ -602,14 +609,11 @@ app.get('/dashboard', (req, res) => {
     </div>
   `;
 
-  const annonces = loadAnnouncementWindows();
   const rows = annonces.map(({ time }) => `
     <tr>
       <td><input type="time" name="times" value="${time}" required></td>
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
     </tr>`).join('');
-
-  const performanceRows = generatePerformanceTable();
 
   res.send(`
     <html>
@@ -641,14 +645,15 @@ app.get('/dashboard', (req, res) => {
       </div>
 
       <div class="card">
-        <h2>📈 Suivi des performances</h2>
-        <form method="POST" action="/save-performance">
+        <h2>📈 Suivi des performances journalières</h2>
+        <form method="POST" action="/save-performances">
           <table>
-            <tr><th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr>
-            ${performanceRows}
-          </table>
-          <br>
-          <button type="submit">💾 Enregistrer les performances</button>
+            <thead><tr><th>Jour</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr></thead>
+            <tbody>
+              ${performanceRows}
+            </tbody>
+          </table><br>
+          <button type="submit">💾 Sauvegarder</button>
         </form>
       </div>
 
@@ -684,10 +689,9 @@ app.post('/dashboard', (req, res) => {
   }
 });
 
-app.post('/save-performance', (req, res) => {
+app.post('/save-performances', (req, res) => {
   const results = req.body.results || {};
-  const data = Object.entries(results).map(([date, result]) => ({ date, result: parseFloat(result || 0).toFixed(2) }));
-  savePerformanceData(data);
+  savePerformanceData(results);
   res.redirect('/dashboard');
 });
 
