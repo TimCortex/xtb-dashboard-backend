@@ -22,6 +22,7 @@ const IG_PASSWORD = 'Lyautey#1';
 const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
 
 const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
+const PERFORMANCE_FILE = path.resolve('performance.json');
 global.entryPrice = null;
 global.entryDirection = null;
 global.entryTime = null;
@@ -44,6 +45,14 @@ function isDuringPauseWindow() {
     const [h, m] = time.split(':').map(Number);
     return Math.abs(currentMinutes - (h * 60 + m)) <= 15;
   });
+}
+
+function loadPerformanceData() {
+  try {
+    return JSON.parse(fs.readFileSync(PERFORMANCE_FILE, 'utf-8'));
+  } catch {
+    return [];
+  }
 }
 
 function generatePerformanceTable() {
