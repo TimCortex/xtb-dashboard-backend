@@ -163,7 +163,7 @@ function generatePerformanceTable(data) {
       background-color: #e0e0e0;
       border-radius: 20px;
       overflow: hidden;
-      height: 8px;
+      height: 21px;
       margin-bottom: 12px;
       position: relative;
     }
@@ -194,7 +194,7 @@ function generatePerformanceTable(data) {
     <h2>📈 Suivi de performance</h2>
     <div class="progress-bar-container">
       <div class="progress-bar-fill" style="width: ${progress.toFixed(2)}%; background-color: ${barColor};">
-        ${capitalCumul.toFixed(2)}€ / ${objectifFinal.toFixed(2)}€
+        ${capitalCumul.toFixed(2)}€ 
       </div>
     </div>
     <form method="POST" action="/save-performance">
