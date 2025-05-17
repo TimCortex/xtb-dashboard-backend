@@ -124,27 +124,43 @@ function savePerformanceData(data) {
 }
 
 function generatePerformanceTable(data) {
-  const totalCumulObjectif = data.reduce((acc, d) => acc + d.objectif, 0);
-  const totalResultats = data.reduce((acc, d) => acc + (d.resultat ?? 0), 0);
-  const ecartTotal = +(totalResultats - totalCumulObjectif).toFixed(2);
-  const ratio = Math.min(100, (totalResultats / totalCumulObjectif) * 100);
-  const progressColor = ecartTotal >= 0 ? '#28a745' : '#dc3545';
+  const finalTarget = +(1000 * Math.pow(1.013, data.length)).toFixed(2); // Objectif final réaliste
+  let capitalCumule = 0;
+
+  const filled = data.filter(d => d.resultat != null);
+  capitalCumule = filled.reduce((acc, d) => acc + d.resultat, 0);
+  capitalCumule = +capitalCumule.toFixed(2);
+
+  const pourcentage = Math.min(100, (capitalCumule / finalTarget) * 100).toFixed(2);
+  const couleur = capitalCumule >= (filled.reduce((acc, _, i) => acc + 1000 * Math.pow(1.013, i), 0))
+    ? '#28a745' : '#dc3545'; // vert ou rouge
 
   return `
   <div class="card">
-    <h2>📈 Suivi de performance
-      <div style="margin-top: 10px; width: 100%; background: #e0e0e0; border-radius: 5px; overflow: hidden; height: 24px; font-size: 14px">
-        <div style="width: ${ratio}%; background: ${progressColor}; color: white; height: 100%; display: flex; align-items: center; justify-content: center">
-          ${totalResultats.toFixed(2)}€ / ${totalCumulObjectif.toFixed(2)}€
+    <h2 style="display:flex; justify-content:space-between; align-items:center">
+      📈 Suivi de performance
+      <div style="flex:1; margin-left:20px;">
+        <div style="background:#e9ecef; border-radius:10px; overflow:hidden;">
+          <div style="
+            width:${pourcentage}%;
+            background:${couleur};
+            color:white;
+            text-align:center;
+            padding:5px 0;
+            font-weight:bold;
+            transition:width 0.3s ease;">
+            ${capitalCumule.toFixed(2)}€ / ${finalTarget.toLocaleString('fr-FR', {minimumFractionDigits:2})}€
+          </div>
         </div>
       </div>
     </h2>
+
     <form method="POST" action="/save-performance">
-      <table border="1" cellpadding="5" style="width: 100%">
+      <table border="1" cellpadding="5" style="width:100%; text-align:center;">
         <tr>
           <th>Date</th>
           <th>Objectif Capital</th>
-          <th>Capital Actuel</th>
+          <th>Capital</th>
           <th>Objectif</th>
           <th>Résultat</th>
           <th>Avance/Retard</th>
@@ -154,7 +170,7 @@ function generatePerformanceTable(data) {
           const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
           return `<tr ${color}>
             <td>${d.date}</td>
-            <td>${d.capitalObjectif.toFixed(2)}€</td>
+            <td>${(1000 * Math.pow(1.013, i)).toFixed(2)}€</td>
             <td>${d.capital.toFixed(2)}€</td>
             <td>${d.objectif.toFixed(2)}€</td>
             <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
@@ -168,8 +184,6 @@ function generatePerformanceTable(data) {
   </div>
   `;
 }
-
-
 
 async function getCurrentPrice() {
   try {
