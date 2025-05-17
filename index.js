@@ -46,55 +46,41 @@ function isDuringPauseWindow() {
   });
 }
 
-function generateTradingDays(startDate = '2025-06-02') {
-  const results = [];
-  let current = new Date(startDate);
+function generatePerformanceTable() {
+  const start = new Date('2025-06-01');
+  const end = new Date('2025-12-31');
+  const performanceData = loadPerformanceData();
+  const mapByDate = Object.fromEntries(performanceData.map(p => [p.date, p]));
+
+  const rows = [];
   let capital = 1000;
-  const today = new Date();
 
-  while (current.getFullYear() === 2025) {
-    const day = current.getDay();
-    if (day >= 1 && day <= 5) {
-      const objectif = parseFloat((capital * 0.013).toFixed(2));
-      results.push({
-        date: current.toISOString().split('T')[0],
-        capital: parseFloat(capital.toFixed(2)),
-        objectif,
-        resultat: null,
-        ecart: null,
-        avance: null
-      });
-      capital += objectif;
-    }
-    current.setDate(current.getDate() + 1);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().split('T')[0];
+    const day = d.getDay();
+    if (day === 0 || day === 6) continue; // Skip weekends
+
+    const target = +(capital * 0.013).toFixed(2);
+    const entry = mapByDate[dateStr] || { date: dateStr, result: '', note: '' };
+    const result = parseFloat(entry.result) || 0;
+    const delta = result - target;
+    capital = +(capital + result).toFixed(2);
+
+    const color = result === '' ? '' : delta >= 0 ? '#d4edda' : '#f8d7da';
+    rows.push(`
+      <tr style="background-color:${color}">
+        <td>${dateStr}</td>
+        <td>${capital.toFixed(2)}</td>
+        <td>${target.toFixed(2)}</td>
+        <td><input type="number" name="results[${dateStr}]" step="0.01" value="${entry.result}" style="width:80px"></td>
+        <td>${delta.toFixed(2)}</td>
+      </tr>
+    `);
   }
-  return results;
+  return rows.join('');
 }
 
-function loadPerformances() {
-  if (fs.existsSync(PERFORMANCE_FILE)) {
-    return JSON.parse(fs.readFileSync(PERFORMANCE_FILE, 'utf-8'));
-  } else {
-    const start = new Date('2025-06-02');
-    const end = new Date('2025-12-31');
-    const days = generateBusinessDays(start, end);
-    let capital = 1000;
-    return days.map((date, i) => {
-      const objectif = +(capital * 0.013).toFixed(2);
-      const row = {
-        jour: date.toISOString().split('T')[0],
-        capital: +capital.toFixed(2),
-        objectif,
-        resultat: null,
-        ecart: null
-      };
-      capital += objectif;
-      return row;
-    });
-  }
-}
-
-function savePerformances(data) {
+function savePerformanceData(data) {
   fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
 }
 
@@ -614,38 +600,7 @@ app.get('/dashboard', (req, res) => {
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
     </tr>`).join('');
 
-  const fs = require('fs');
-  const perfPath = 'performance.json';
-  let performances = [];
-  if (fs.existsSync(perfPath)) performances = JSON.parse(fs.readFileSync(perfPath, 'utf-8'));
-
-  const today = new Date();
-  const start = new Date('2025-06-01');
-  const days = [];
-  let capital = 1000;
-  while (start <= new Date('2025-12-31')) {
-    const isWeekend = start.getDay() === 0 || start.getDay() === 6;
-    if (!isWeekend) {
-      const dateStr = start.toISOString().split('T')[0];
-      const existing = performances.find(p => p.date === dateStr);
-      const result = existing ? existing.result : '';
-      const expected = +(capital * 0.013).toFixed(2);
-      const advance = result !== '' ? +(result - expected).toFixed(2) : '';
-      const nextCapital = result !== '' ? +(capital + parseFloat(result)).toFixed(2) : capital;
-      days.push({ date: dateStr, capital, expected, result, advance });
-      capital = nextCapital;
-    }
-    start.setDate(start.getDate() + 1);
-  }
-
-  const performanceRows = days.map(d => `
-    <tr class="${d.advance < 0 ? 'delay' : d.advance > 0 ? 'ahead' : ''}">
-      <td>${d.date}</td>
-      <td>${d.capital.toFixed(2)}€</td>
-      <td>${d.expected.toFixed(2)}€</td>
-      <td><input type="number" name="result-${d.date}" step="0.01" value="${d.result}" /></td>
-      <td>${d.advance !== '' ? d.advance.toFixed(2) + '€' : ''}</td>
-    </tr>`).join('');
+  const performanceRows = generatePerformanceTable();
 
   res.send(`
     <html>
@@ -658,9 +613,8 @@ app.get('/dashboard', (req, res) => {
         .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
         input, select { margin-right: 10px; padding: 6px; }
         table { border-collapse: collapse; margin-top: 20px; width: 100%; }
-        td, th { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ccc; }
-        .ahead { background-color: #d4edda; }
-        .delay { background-color: #f8d7da; }
+        td, th { padding: 5px; border: 1px solid #ccc; text-align: center; }
+        button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
       </style>
     </head>
     <body>
@@ -678,14 +632,13 @@ app.get('/dashboard', (req, res) => {
       </div>
 
       <div class="card">
-        <h2>📈 Suivi Journalier</h2>
-        <form method="POST" action="/dashboard">
+        <h2>📈 Suivi des performances</h2>
+        <form method="POST" action="/save-performance">
           <table>
-            <tr>
-              <th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th>
-            </tr>
+            <tr><th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr>
             ${performanceRows}
           </table>
+          <br>
           <button type="submit">💾 Enregistrer les performances</button>
         </form>
       </div>
@@ -712,7 +665,6 @@ app.get('/dashboard', (req, res) => {
   `);
 });
 
-
 app.post('/dashboard', (req, res) => {
   try {
     const annonces = JSON.parse(req.body.annonces);
@@ -723,22 +675,13 @@ app.post('/dashboard', (req, res) => {
   }
 });
 
-app.post('/performance', (req, res) => {
-  const data = loadPerformanceData();
-  for (let i = 0; i < data.length; i++) {
-    const result = req.body[`resultat${i}`];
-    if (result !== undefined && result !== '') {
-      const parsed = parseFloat(result);
-      if (!isNaN(parsed)) {
-        data[i].resultat = parsed;
-        data[i].ecart = parseFloat((parsed - data[i].objectif).toFixed(2));
-        data[i].avance = parsed >= data[i].objectif;
-      }
-    }
-  }
+app.post('/save-performance', (req, res) => {
+  const results = req.body.results || {};
+  const data = Object.entries(results).map(([date, result]) => ({ date, result: parseFloat(result || 0).toFixed(2) }));
   savePerformanceData(data);
   res.redirect('/dashboard');
 });
+
 
 app.post('/set-entry', (req, res) => {
   const { price, direction } = req.body;
