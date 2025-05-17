@@ -124,16 +124,24 @@ function savePerformanceData(data) {
 }
 
 function generatePerformanceTable(data) {
-  const finalTarget = +(1000 * Math.pow(1.013, data.length)).toFixed(2); // Objectif final réaliste
-  let capitalCumule = 0;
+  const finalTarget = +(1000 * Math.pow(1.013, data.length)).toFixed(2); // Objectif final avec réinvestissement
+  
+  // Calcul du capital cumulé réel (somme capital + résultats renseignés)
+  let capitalCumule = 1000;
+  for (let i = 0; i < data.length; i++) {
+    if (i > 0 && data[i - 1].resultat != null) {
+      capitalCumule += data[i - 1].resultat;
+    }
+    data[i].capitalReel = capitalCumule; // Pour affichage
+  }
 
-  const filled = data.filter(d => d.resultat != null);
-  capitalCumule = filled.reduce((acc, d) => acc + d.resultat, 0);
-  capitalCumule = +capitalCumule.toFixed(2);
+  const lastRenseigneIndex = data.findLastIndex(d => d.resultat != null);
+  const targetAtThisPoint = lastRenseigneIndex >= 0
+    ? +(1000 * Math.pow(1.013, lastRenseigneIndex + 1)).toFixed(2)
+    : 1000;
 
   const pourcentage = Math.min(100, (capitalCumule / finalTarget) * 100).toFixed(2);
-  const couleur = capitalCumule >= (filled.reduce((acc, _, i) => acc + 1000 * Math.pow(1.013, i), 0))
-    ? '#28a745' : '#dc3545'; // vert ou rouge
+  const couleur = capitalCumule >= targetAtThisPoint ? '#28a745' : '#dc3545';
 
   return `
   <div class="card">
@@ -160,7 +168,7 @@ function generatePerformanceTable(data) {
         <tr>
           <th>Date</th>
           <th>Objectif Capital</th>
-          <th>Capital</th>
+          <th>Capital réel</th>
           <th>Objectif</th>
           <th>Résultat</th>
           <th>Avance/Retard</th>
@@ -171,7 +179,7 @@ function generatePerformanceTable(data) {
           return `<tr ${color}>
             <td>${d.date}</td>
             <td>${(1000 * Math.pow(1.013, i)).toFixed(2)}€</td>
-            <td>${d.capital.toFixed(2)}€</td>
+            <td>${d.capitalReel.toFixed(2)}€</td>
             <td>${d.objectif.toFixed(2)}€</td>
             <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
             <td>${ecart != null ? ecart.toFixed(2) + '€' : ''}</td>
