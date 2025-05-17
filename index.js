@@ -124,11 +124,30 @@ function savePerformanceData(data) {
 }
 
 function generatePerformanceTable(data) {
+  const completedRows = data.filter(d => d.resultat != null);
+  const totalResultat = completedRows.reduce((sum, d) => sum + d.resultat, 0);
+  const totalObjectif = completedRows.reduce((sum, d) => sum + d.objectif, 0);
+  const maxObjectif = data.reduce((sum, d) => sum + d.objectif, 0);
+
+  const pourcentage = Math.min(100, (totalResultat / maxObjectif) * 100).toFixed(1);
+  const ecartGlobal = +(totalResultat - totalObjectif).toFixed(2);
+  const couleur = ecartGlobal >= 0 ? '#28a745' : '#dc3545';
+  const texte = ecartGlobal >= 0 ? `+${ecartGlobal}€ d’avance` : `${ecartGlobal}€ de retard`;
+
   return `
   <div class="card">
-    <h2>📈 Suivi de performance</h2>
+    <h2>
+      📈 Suivi de performance
+      <div style="margin-top: 10px;">
+        <div style="background: #e9ecef; border-radius: 10px; overflow: hidden; height: 25px; width: 100%;">
+          <div style="width: ${pourcentage}%; background: ${couleur}; color: white; text-align: center; line-height: 25px;">
+            ${texte} (${pourcentage}%)
+          </div>
+        </div>
+      </div>
+    </h2>
     <form method="POST" action="/save-performance">
-      <table border="1" cellpadding="5" style="width: 100%;">
+      <table border="1" cellpadding="5" style="width:100%">
         <tr>
           <th>Date</th>
           <th>Objectif Capital</th>
@@ -138,12 +157,11 @@ function generatePerformanceTable(data) {
           <th>Avance/Retard</th>
         </tr>
         ${data.map((d, i) => {
-          const idealCapital = 1000 * Math.pow(1.013, i);
           const ecart = d.resultat != null ? +(d.resultat - d.objectif).toFixed(2) : null;
           const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
           return `<tr ${color}>
             <td>${d.date}</td>
-            <td>${idealCapital.toFixed(2)}€</td>
+            <td>${d.capitalObjectif.toFixed(2)}€</td>
             <td>${d.capital.toFixed(2)}€</td>
             <td>${d.objectif.toFixed(2)}€</td>
             <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
@@ -154,8 +172,7 @@ function generatePerformanceTable(data) {
       <br>
       <button type="submit">💾 Enregistrer les performances</button>
     </form>
-  </div>
-  `;
+  </div>`;
 }
 
 
