@@ -562,20 +562,32 @@ app.get('/dashboard', (req, res) => {
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
     </tr>`).join('');
 
-  const startCapital = 1000;
-  const days = 250; // jours ouvrés approx.
-  const performanceRows = Array.from({ length: days }, (_, i) => {
-    const jour = i + 1;
-    const objectif = startCapital * Math.pow(1 + 0.03 / 5, jour);
-    return `
-      <tr>
-        <td>${jour}</td>
-        <td id="capital-${jour}">${(jour === 1 ? startCapital : '').toFixed(2)}</td>
-        <td>${objectif.toFixed(2)}</td>
-        <td><input type="number" name="resultat-${jour}" step="0.01" onchange="updatePerformance(${jour})"></td>
-        <td id="ecart-${jour}">—</td>
-      </tr>`;
-  }).join('');
+  const today = new Date();
+  const startDate = new Date('2025-01-02');
+  const weekdays = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  let performanceRows = '';
+  let capital = 1000;
+  let dayCount = 0;
+
+  while (startDate <= today) {
+    const day = startDate.getDay();
+    if (day !== 0 && day !== 6) {
+      dayCount++;
+      const objective = capital * 0.03 / 5;
+      const dateStr = startDate.toISOString().split('T')[0];
+      performanceRows += `
+        <tr>
+          <td>${dayCount}</td>
+          <td>${dateStr}</td>
+          <td>${capital.toFixed(2)}</td>
+          <td>${objective.toFixed(2)}</td>
+          <td><input type="number" step="0.01" name="result_${dateStr}" oninput="updateProgress(this)"></td>
+          <td class="status" id="status_${dateStr}">—</td>
+        </tr>`;
+      capital += objective; // simulate perfect progression
+    }
+    startDate.setDate(startDate.getDate() + 1);
+  }
 
   res.send(`
     <html>
@@ -588,10 +600,10 @@ app.get('/dashboard', (req, res) => {
         .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
         input, select { margin-right: 10px; padding: 6px; }
         table { border-collapse: collapse; margin-top: 20px; width: 100%; }
-        td, th { padding: 6px 10px; border: 1px solid #ddd; text-align: center; }
+        td, th { padding: 5px; border-bottom: 1px solid #ddd; text-align: center; }
         button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
-        .advance { background-color: #d4edda; }
-        .delay { background-color: #f8d7da; }
+        .status.positive { background: #c8f7c5; }
+        .status.negative { background: #f7c5c5; }
       </style>
     </head>
     <body>
@@ -607,10 +619,14 @@ app.get('/dashboard', (req, res) => {
         </form>
       </div>
       <div class="card">
-        <h2>📅 Suivi des performances</h2>
+        <h2>📅 Suivi journalier des performances</h2>
         <table>
-          <tr><th>Jour</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr>
-          ${performanceRows}
+          <thead>
+            <tr><th>Jour</th><th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr>
+          </thead>
+          <tbody>
+            ${performanceRows}
+          </tbody>
         </table>
       </div>
       <script>
@@ -629,19 +645,18 @@ app.get('/dashboard', (req, res) => {
           document.getElementById('jsonData').value = JSON.stringify(data);
           return true;
         }
-
-        function updatePerformance(jour) {
-          let prevCapital = jour === 1 ? 1000 : parseFloat(document.getElementById(`capital-${jour - 1}`).innerText);
-          const resultInput = document.querySelector(`input[name='resultat-${jour}']`);
-          const result = parseFloat(resultInput.value);
-          if (!isNaN(result)) {
-            const newCapital = prevCapital + result;
-            document.getElementById(`capital-${jour}`).innerText = newCapital.toFixed(2);
-            const objectif = parseFloat(document.querySelectorAll('table tr')[jour].children[2].innerText);
-            const ecart = newCapital - objectif;
-            const ecartCell = document.getElementById(`ecart-${jour}`);
-            ecartCell.innerText = ecart.toFixed(2);
-            ecartCell.className = ecart >= 0 ? 'advance' : 'delay';
+        function updateProgress(input) {
+          const tr = input.closest('tr');
+          const objectif = parseFloat(tr.children[3].innerText);
+          const resultat = parseFloat(input.value);
+          const statusCell = tr.querySelector('.status');
+          if (!isNaN(resultat)) {
+            const diff = resultat - objectif;
+            statusCell.innerText = (diff >= 0 ? '+' : '') + diff.toFixed(2);
+            statusCell.className = 'status ' + (diff >= 0 ? 'positive' : 'negative');
+          } else {
+            statusCell.innerText = '—';
+            statusCell.className = 'status';
           }
         }
       </script>
@@ -649,17 +664,6 @@ app.get('/dashboard', (req, res) => {
     </html>
   `);
 });
-
-app.post('/dashboard', (req, res) => {
-  try {
-    const annonces = JSON.parse(req.body.annonces);
-    fs.writeFileSync(ANNOUNCEMENT_FILE, JSON.stringify(annonces, null, 2));
-    res.redirect('/dashboard');
-  } catch (err) {
-    res.status(400).send('Erreur dans les données JSON.');
-  }
-});
-
 
 app.post('/set-entry', (req, res) => {
   const { price, direction } = req.body;
