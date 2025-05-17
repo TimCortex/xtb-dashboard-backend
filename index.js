@@ -124,34 +124,27 @@ function savePerformanceData(data) {
 }
 
 function generatePerformanceTable(data) {
-  const completedRows = data.filter(d => d.resultat != null);
-  const totalResultat = completedRows.reduce((sum, d) => sum + d.resultat, 0);
-  const totalObjectif = completedRows.reduce((sum, d) => sum + d.objectif, 0);
-  const maxObjectif = data.reduce((sum, d) => sum + d.objectif, 0);
-
-  const pourcentage = Math.min(100, (totalResultat / maxObjectif) * 100).toFixed(1);
-  const ecartGlobal = +(totalResultat - totalObjectif).toFixed(2);
-  const couleur = ecartGlobal >= 0 ? '#28a745' : '#dc3545';
-  const texte = ecartGlobal >= 0 ? `+${ecartGlobal}€ d’avance` : `${ecartGlobal}€ de retard`;
+  const totalCumulObjectif = data.reduce((acc, d) => acc + d.objectif, 0);
+  const totalResultats = data.reduce((acc, d) => acc + (d.resultat ?? 0), 0);
+  const ecartTotal = +(totalResultats - totalCumulObjectif).toFixed(2);
+  const ratio = Math.min(100, (totalResultats / totalCumulObjectif) * 100);
+  const progressColor = ecartTotal >= 0 ? '#28a745' : '#dc3545';
 
   return `
   <div class="card">
-    <h2>
-      📈 Suivi de performance
-      <div style="margin-top: 10px;">
-        <div style="background: #e9ecef; border-radius: 10px; overflow: hidden; height: 25px; width: 100%;">
-          <div style="width: ${pourcentage}%; background: ${couleur}; color: white; text-align: center; line-height: 25px;">
-            ${texte} (${pourcentage}%)
-          </div>
+    <h2>📈 Suivi de performance
+      <div style="margin-top: 10px; width: 100%; background: #e0e0e0; border-radius: 5px; overflow: hidden; height: 24px; font-size: 14px">
+        <div style="width: ${ratio}%; background: ${progressColor}; color: white; height: 100%; display: flex; align-items: center; justify-content: center">
+          ${totalResultats.toFixed(2)}€ / ${totalCumulObjectif.toFixed(2)}€
         </div>
       </div>
     </h2>
     <form method="POST" action="/save-performance">
-      <table border="1" cellpadding="5" style="width:100%">
+      <table border="1" cellpadding="5" style="width: 100%">
         <tr>
           <th>Date</th>
           <th>Objectif Capital</th>
-          <th>Capital</th>
+          <th>Capital Actuel</th>
           <th>Objectif</th>
           <th>Résultat</th>
           <th>Avance/Retard</th>
@@ -172,8 +165,10 @@ function generatePerformanceTable(data) {
       <br>
       <button type="submit">💾 Enregistrer les performances</button>
     </form>
-  </div>`;
+  </div>
+  `;
 }
+
 
 
 async function getCurrentPrice() {
