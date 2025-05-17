@@ -47,14 +47,25 @@ function isDuringPauseWindow() {
   });
 }
 
+function getBusinessDays(startDate, count) {
+  const days = [];
+  let current = new Date(startDate);
+  while (days.length < count) {
+    if (current.getDay() !== 0 && current.getDay() !== 6) {
+      days.push(new Date(current));
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return days;
+}
+
 function generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
+  const businessDays = getBusinessDays(start, days);
   const rows = [];
   let capital = 1000;
-  for (let i = 0; i < days; i++) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + i);
-    const day = date.getDay();
-    if (day === 0 || day === 6) continue; // Skip weekends
+
+  for (let i = 0; i < businessDays.length; i++) {
+    const date = businessDays[i];
     const objectif = +(capital * 0.013).toFixed(2);
     rows.push({
       date: date.toISOString().split('T')[0],
@@ -68,6 +79,28 @@ function generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
   return rows;
 }
 
+function updatePerformanceData(data) {
+  let capital = 1000;
+
+  for (let i = 0; i < data.length; i++) {
+    const prev = data[i - 1];
+    if (i === 0) {
+      data[i].capital = capital;
+    } else {
+      capital = prev.capital + (prev.resultat || 0);
+      data[i].capital = +capital.toFixed(2);
+    }
+
+    const expected = 1000 * Math.pow(1.013, i);
+    const retard = capital - expected;
+    const objectif = +(capital * 0.013 + (retard < 0 ? -retard : 0)).toFixed(2);
+
+    data[i].objectif = objectif;
+    data[i].ecart = data[i].resultat != null ? +(data[i].resultat - objectif).toFixed(2) : null;
+  }
+  return data;
+}
+
 function loadPerformanceData() {
   try {
     if (!fs.existsSync(PERFORMANCE_FILE)) {
@@ -77,12 +110,7 @@ function loadPerformanceData() {
     }
     const raw = fs.readFileSync(PERFORMANCE_FILE);
     const parsed = JSON.parse(raw);
-    if (!parsed.length) {
-      const data = generatePerformanceData();
-      fs.writeFileSync(PERFORMANCE_FILE, JSON.stringify(data, null, 2));
-      return data;
-    }
-    return parsed;
+    return updatePerformanceData(parsed);
   } catch (e) {
     console.error("❌ Erreur chargement performances:", e);
     return [];
@@ -107,14 +135,13 @@ function generatePerformanceTable(data) {
           <th>Avance/Retard</th>
         </tr>
         ${data.map((d, i) => {
-          const ecart = d.resultat != null ? +(d.resultat - d.objectif).toFixed(2) : null;
-          const color = ecart == null ? '' : ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
+          const color = d.ecart == null ? '' : d.ecart >= 0 ? 'style="background:#d4edda"' : 'style="background:#f8d7da"';
           return `<tr ${color}>
             <td>${d.date}</td>
             <td>${d.capital.toFixed(2)}€</td>
             <td>${d.objectif.toFixed(2)}€</td>
             <td><input type="number" step="0.01" name="resultat-${i}" value="${d.resultat ?? ''}" /></td>
-            <td>${ecart != null ? ecart.toFixed(2) + '€' : ''}</td>
+            <td>${d.ecart != null ? d.ecart.toFixed(2) + '€' : ''}</td>
           </tr>`;
         }).join('')}
       </table>
@@ -124,6 +151,7 @@ function generatePerformanceTable(data) {
   </div>
   `;
 }
+
 
 async function getCurrentPrice() {
   try {
