@@ -592,18 +592,6 @@ app.get('/dashboard', (req, res) => {
       <form method="POST" action="/clear-entry">
         <button class="danger">❌ Supprimer</button>
       </form>
-    </div>app.get('/dashboard', (req, res) => {
-  if (!fs.existsSync(PERFORMANCE_FILE)) savePerformanceData(generateTradingDays());
-  const data = loadPerformanceData();
-
-  const entryHTML = entryPrice ? `
-    <div class="card">
-      <h2>🎯 Entry Price</h2>
-      <p><strong>Prix :</strong> ${entryPrice.toFixed(5)}</p>
-      <p><strong>Direction :</strong> ${entryDirection}</p>
-      <form method="POST" action="/clear-entry">
-        <button class="danger">❌ Supprimer</button>
-      </form>
     </div>
   ` : `
     <div class="card warning">
@@ -626,20 +614,38 @@ app.get('/dashboard', (req, res) => {
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
     </tr>`).join('');
 
-  const performanceRows = data.map((row, i) => {
-    const ecart = row.resultat != null ? (row.resultat - row.objectif).toFixed(2) : '';
-    const avance = row.resultat != null ? (row.resultat >= row.objectif ? '✅' : '❌') : '';
-    const bgColor = row.resultat != null ? (row.resultat >= row.objectif ? '#d4edda' : '#f8d7da') : '#fff';
-    return `
-      <tr style="background-color:${bgColor}">
-        <td>${row.date}</td>
-        <td>${row.capital.toFixed(2)}</td>
-        <td>${row.objectif.toFixed(2)}</td>
-        <td><input type="number" name="resultat${i}" value="${row.resultat != null ? row.resultat : ''}" step="0.01"></td>
-        <td>${ecart}</td>
-        <td>${avance}</td>
-      </tr>`;
-  }).join('');
+  const fs = require('fs');
+  const perfPath = 'performance.json';
+  let performances = [];
+  if (fs.existsSync(perfPath)) performances = JSON.parse(fs.readFileSync(perfPath, 'utf-8'));
+
+  const today = new Date();
+  const start = new Date('2025-06-01');
+  const days = [];
+  let capital = 1000;
+  while (start <= new Date('2025-12-31')) {
+    const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+    if (!isWeekend) {
+      const dateStr = start.toISOString().split('T')[0];
+      const existing = performances.find(p => p.date === dateStr);
+      const result = existing ? existing.result : '';
+      const expected = +(capital * 0.013).toFixed(2);
+      const advance = result !== '' ? +(result - expected).toFixed(2) : '';
+      const nextCapital = result !== '' ? +(capital + parseFloat(result)).toFixed(2) : capital;
+      days.push({ date: dateStr, capital, expected, result, advance });
+      capital = nextCapital;
+    }
+    start.setDate(start.getDate() + 1);
+  }
+
+  const performanceRows = days.map(d => `
+    <tr class="${d.advance < 0 ? 'delay' : d.advance > 0 ? 'ahead' : ''}">
+      <td>${d.date}</td>
+      <td>${d.capital.toFixed(2)}€</td>
+      <td>${d.expected.toFixed(2)}€</td>
+      <td><input type="number" name="result-${d.date}" step="0.01" value="${d.result}" /></td>
+      <td>${d.advance !== '' ? d.advance.toFixed(2) + '€' : ''}</td>
+    </tr>`).join('');
 
   res.send(`
     <html>
@@ -652,9 +658,9 @@ app.get('/dashboard', (req, res) => {
         .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
         input, select { margin-right: 10px; padding: 6px; }
         table { border-collapse: collapse; margin-top: 20px; width: 100%; }
-        td, th { padding: 6px; text-align: center; border: 1px solid #ccc; }
-        th { background-color: #ddd; }
-        button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
+        td, th { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ccc; }
+        .ahead { background-color: #d4edda; }
+        .delay { background-color: #f8d7da; }
       </style>
     </head>
     <body>
@@ -672,14 +678,15 @@ app.get('/dashboard', (req, res) => {
       </div>
 
       <div class="card">
-        <h2>📈 Suivi des performances (objectif 1.3% / jour)</h2>
-        <form method="POST" action="/performance">
+        <h2>📈 Suivi Journalier</h2>
+        <form method="POST" action="/dashboard">
           <table>
-            <tr><th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Écart</th><th>Avance</th></tr>
+            <tr>
+              <th>Date</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th>
+            </tr>
             ${performanceRows}
           </table>
-          <br>
-          <button type="submit">💾 Sauvegarder les résultats</button>
+          <button type="submit">💾 Enregistrer les performances</button>
         </form>
       </div>
 
@@ -693,7 +700,9 @@ app.get('/dashboard', (req, res) => {
         function updateAnnouncements() {
           const inputs = document.getElementsByName('times');
           const data = [];
-          for (const input of inputs) if (input.value) data.push({ time: input.value });
+          for (const input of inputs) {
+            if (input.value) data.push({ time: input.value });
+          }
           document.getElementById('jsonData').value = JSON.stringify(data);
           return true;
         }
@@ -702,6 +711,7 @@ app.get('/dashboard', (req, res) => {
     </html>
   `);
 });
+
 
 app.post('/dashboard', (req, res) => {
   try {
