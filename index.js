@@ -531,18 +531,6 @@ app.get('/clear-entry', (req, res) => {
   res.send('❌ Entry supprimé via GET');
 });
 
-app.get('/set-entry', (req, res) => {
-  const { price, direction } = req.query;
-  if (!price || !['BUY', 'SELL'].includes(direction)) {
-    return res.status(400).send('Paramètres invalides (GET)');
-  }
- global.entryPrice = parseFloat(price);
-global.entryDirection = direction;
-global.entryTime = Date.now();
-
-  res.send(`✅ Entry défini via GET : ${price} (${direction})`);
-});
-
 app.get('/dashboard', (req, res) => {
   const entryHTML = entryPrice ? `
     <div class="card">
@@ -574,6 +562,21 @@ app.get('/dashboard', (req, res) => {
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
     </tr>`).join('');
 
+  const startCapital = 1000;
+  const days = 250; // jours ouvrés approx.
+  const performanceRows = Array.from({ length: days }, (_, i) => {
+    const jour = i + 1;
+    const objectif = startCapital * Math.pow(1 + 0.03 / 5, jour);
+    return `
+      <tr>
+        <td>${jour}</td>
+        <td id="capital-${jour}">${(jour === 1 ? startCapital : '').toFixed(2)}</td>
+        <td>${objectif.toFixed(2)}</td>
+        <td><input type="number" name="resultat-${jour}" step="0.01" onchange="updatePerformance(${jour})"></td>
+        <td id="ecart-${jour}">—</td>
+      </tr>`;
+  }).join('');
+
   res.send(`
     <html>
     <head>
@@ -584,9 +587,11 @@ app.get('/dashboard', (req, res) => {
         .warning { background-color: #fff3cd; }
         .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
         input, select { margin-right: 10px; padding: 6px; }
-        table { border-collapse: collapse; margin-top: 20px; }
-        td { padding: 5px; }
+        table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+        td, th { padding: 6px 10px; border: 1px solid #ddd; text-align: center; }
         button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
+        .advance { background-color: #d4edda; }
+        .delay { background-color: #f8d7da; }
       </style>
     </head>
     <body>
@@ -600,6 +605,13 @@ app.get('/dashboard', (req, res) => {
           <input type="hidden" name="annonces" id="jsonData">
           <button type="submit">💾 Enregistrer</button>
         </form>
+      </div>
+      <div class="card">
+        <h2>📅 Suivi des performances</h2>
+        <table>
+          <tr><th>Jour</th><th>Capital</th><th>Objectif</th><th>Résultat</th><th>Avance/Retard</th></tr>
+          ${performanceRows}
+        </table>
       </div>
       <script>
         function addRow() {
@@ -617,6 +629,21 @@ app.get('/dashboard', (req, res) => {
           document.getElementById('jsonData').value = JSON.stringify(data);
           return true;
         }
+
+        function updatePerformance(jour) {
+          let prevCapital = jour === 1 ? 1000 : parseFloat(document.getElementById(`capital-${jour - 1}`).innerText);
+          const resultInput = document.querySelector(`input[name='resultat-${jour}']`);
+          const result = parseFloat(resultInput.value);
+          if (!isNaN(result)) {
+            const newCapital = prevCapital + result;
+            document.getElementById(`capital-${jour}`).innerText = newCapital.toFixed(2);
+            const objectif = parseFloat(document.querySelectorAll('table tr')[jour].children[2].innerText);
+            const ecart = newCapital - objectif;
+            const ecartCell = document.getElementById(`ecart-${jour}`);
+            ecartCell.innerText = ecart.toFixed(2);
+            ecartCell.className = ecart >= 0 ? 'advance' : 'delay';
+          }
+        }
       </script>
     </body>
     </html>
@@ -632,6 +659,7 @@ app.post('/dashboard', (req, res) => {
     res.status(400).send('Erreur dans les données JSON.');
   }
 });
+
 
 app.post('/set-entry', (req, res) => {
   const { price, direction } = req.body;
