@@ -751,7 +751,10 @@ app.get('/dashboard', (req, res) => {
       </style>
     </head>
     <body>
-      <h1>📊 ZenScalp Dashboard</h1>
+      <h1>
+  <img src="/ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
+  ZenScalp Dashboard
+</h1>
       ${entryHTML}
       <div class="card">
         <h2>🗓️ Annonces économiques</h2>
