@@ -752,7 +752,7 @@ app.get('/dashboard', (req, res) => {
     </head>
     <body>
       <h1>
-  <img src="/ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
+  <img src="ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
   ZenScalp Dashboard
 </h1>
       ${entryHTML}
