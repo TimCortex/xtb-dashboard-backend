@@ -629,16 +629,27 @@ async function sendToDiscord(msg) {
 cron.schedule('* * * * *', async () => {
   try {
     if (isDuringPauseWindow()) {
-      if (!isPaused) {
-        isPaused = true;
-        await sendToDiscord('⏸️ Analyse suspendue - annonce économique en cours.');
-      }
-      return;
-    }
+  if (!isPaused) {
+    isPaused = true;
+    const msg = '⏸️ Analyse suspendue - annonce économique en cours.';
+    await sendToDiscord(msg);
+    global.latestSignal = {
+      message: msg,
+      date: new Date()
+    };
+  }
+  return;
+}
     if (isPaused) {
-      isPaused = false;
-      await sendToDiscord('✅ Reprise des analyses ZenScalp.');
-    }
+  isPaused = false;
+  const msg = '✅ Reprise des analyses ZenScalp.';
+  await sendToDiscord(msg);
+  global.latestSignal = {
+    message: msg,
+    date: new Date()
+  };
+}
+
 
     const data5m = await fetchData(5);
 const data15m = await fetchData(15);
