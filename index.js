@@ -219,16 +219,15 @@ function generatePerformanceTable(data) {
 
 async function getCurrentPrice() {
   try {
-    const loginRes = await axios.post(`${IG_API_URL}/session`, {
-      identifier: IG_USERNAME,
-      password: IG_PASSWORD
-    }, {
-      headers: {
-        'X-IG-API-KEY': IG_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json;version=3'
-      }
-    });
+    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
+    const response = await axios.get(url);
+    return response.data?.last?.ask ?? null;
+  } catch (e) {
+    console.error('❌ Erreur prix Polygon:', e.message);
+    return null;
+  }
+}
+
 
     const cst = loginRes.headers['cst'];
     const xSecurityToken = loginRes.headers['x-security-token'];
@@ -596,7 +595,7 @@ async function fetchData(period = 5) {
   console.log(`[DEBUG] Bougies ${period}m reçues : ${data.results.length}`);
   return data.results.reverse();
 }
-
+/*
 async function fetchDataFromIG(period = 5) {
   try {
     // 1. Login session
@@ -638,7 +637,7 @@ async function fetchDataFromIG(period = 5) {
     console.error('❌ Erreur IG fetch:', err.message);
     return [];
   }
-}
+}*/
 
 
 
@@ -662,8 +661,8 @@ cron.schedule('* * * * *', async () => {
       await sendToDiscord('✅ Reprise des analyses ZenScalp.');
     }
 
-    const data5m = await fetchDataFromIG(5);
-    const data15m = await fetchDataFromIG(15);
+    const data5m = await fetchData(5);
+const data15m = await fetchData(15);
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
