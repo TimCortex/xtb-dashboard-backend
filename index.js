@@ -19,7 +19,7 @@ const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP0
 const IG_API_URL = 'https://api.ig.com/gateway/deal';
 const IG_USERNAME = 'timagnus';
 const IG_PASSWORD = 'Lyautey#1';
-const IG_API_KEY = '2a3e078a4eec24c7479614f8ba54ebf781ed7298';
+const IG_API_KEY = 'abd969f1ef5b6c5abd190d6deab2ae3401dfebc1';
 
 const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
 const PERFORMANCE_FILE = path.resolve('performance.json');
