@@ -228,27 +228,6 @@ async function getCurrentPrice() {
   }
 }
 
-
-    const cst = loginRes.headers['cst'];
-    const xSecurityToken = loginRes.headers['x-security-token'];
-
-    const res = await axios.get(`${IG_API_URL}/markets/CS.D.EURUSD.MINI.IP`, {
-      headers: {
-        'X-IG-API-KEY': IG_API_KEY,
-        'CST': cst,
-        'X-SECURITY-TOKEN': xSecurityToken,
-        'Accept': 'application/json;version=3'
-      }
-    });
-
-    return res.data.snapshot.offer ?? null;
-  } catch {
-    const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
-    const response = await axios.get(url);
-    return response.data?.last?.ask ?? null;
-  }
-}
-
 function calculateConfidence(bull, bear) {
   const total = bull + bear;
   return {
