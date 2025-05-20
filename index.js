@@ -14,7 +14,7 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
 const SYMBOL = 'C:EURUSD';
-const WEBHOOK_URL = 'https://discord.com/api/webhooks/1366467465630187603/dyRbP05w82szDugjqa6IRF5rkvFGER4RTFqonh2gxGhrE-mHRe_gY4kH0HYHDNjAbPLi';
+const WEBHOOK_URL = https://discordapp.com/api/webhooks/1374330601431109694/g7CqC2-M8pGraO7F3g0q3At0D6BsvyAb0PHtXdwn0KK3aj_4t9hDRcKyQSmNmkyNVEg3';
 
 const IG_API_URL = 'https://api.ig.com/gateway/deal';
 const IG_USERNAME = 'timagnus';
