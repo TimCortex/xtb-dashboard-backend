@@ -777,12 +777,12 @@ app.get('/dashboard', (req, res) => {
           background-color: #5865f2;
           color: white;
         }
-        .discord-style {
+        .signal-box {
           background: #2f3136;
           color: #dcddde;
           border-radius: 8px;
           padding: 15px;
-          font-family: 'Courier New', monospace;
+          font-family: inherit;
           white-space: pre-wrap;
           line-height: 1.5;
           font-size: 14px;
@@ -821,18 +821,23 @@ app.get('/dashboard', (req, res) => {
         <div style="flex: 1;">
           <div class="card" id="notifCard">
             <h2>🔔 Dernier Signal <span style="font-size: 0.8em; color: #43b581;">🟢 LIVE</span></h2>
-            <div id="notifContent" class="discord-style">Chargement...</div>
+            <div id="notifContent" class="signal-box">Chargement...</div>
+            <div id="notifTime" style="font-size: 12px; margin-top: 4px; color: #999;"></div>
+            <audio id="notifSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" preload="auto"></audio>
           </div>
         </div>
       </div>
 
       <script>
+        let lastSignalText = '';
+
         function addRow() {
           const table = document.getElementById('timesTable');
           const row = table.insertRow();
           row.innerHTML = '<td><input type="time" name="times" required></td>' +
                           '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>';
         }
+
         function updateAnnouncements() {
           const inputs = document.getElementsByName('times');
           const data = [];
@@ -848,12 +853,21 @@ app.get('/dashboard', (req, res) => {
             const res = await fetch('/latest-signal');
             const data = await res.json();
             const el = document.getElementById('notifContent');
-            el.classList.remove('animate-fade');
-            void el.offsetWidth;
-            el.classList.add('animate-fade');
-            el.innerText = data.message;
-          } catch {
+            const timeEl = document.getElementById('notifTime');
+
+            if (data.message && data.message !== lastSignalText) {
+              el.innerText = data.message;
+              const date = new Date(data.date);
+              const timeStr = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              timeEl.innerText = "🕒 Signal généré à " + timeStr;
+              lastSignalText = data.message;
+
+              const sound = document.getElementById('notifSound');
+              if (sound) sound.play();
+            }
+          } catch (e) {
             document.getElementById('notifContent').innerText = "⚠️ Erreur lors du chargement.";
+            document.getElementById('notifTime').innerText = '';
           }
         }
 
