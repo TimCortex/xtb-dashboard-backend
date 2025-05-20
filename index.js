@@ -225,7 +225,7 @@ async function getCurrentPrice() {
       headers: {
         'X-IG-API-KEY': IG_API_KEY,
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json;version=3'
       }
     });
 
@@ -237,7 +237,7 @@ async function getCurrentPrice() {
         'X-IG-API-KEY': IG_API_KEY,
         'CST': cst,
         'X-SECURITY-TOKEN': xSecurityToken,
-        'Accept': 'application/json'
+        'Accept': 'application/json;version=3'
       }
     });
 
@@ -606,7 +606,7 @@ async function fetchDataFromIG(period = 5) {
       headers: {
         'X-IG-API-KEY': IG_API_KEY,
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json;version=3'
       }
     });
 
@@ -620,7 +620,7 @@ async function fetchDataFromIG(period = 5) {
         'X-IG-API-KEY': IG_API_KEY,
         'CST': cst,
         'X-SECURITY-TOKEN': xSecurityToken,
-        'Accept': 'application/json'
+        'Accept': 'application/json;version=3'
       }
     });
 
