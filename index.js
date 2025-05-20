@@ -26,6 +26,7 @@ const PERFORMANCE_FILE = path.resolve('performance.json');
 global.entryPrice = null;
 global.entryDirection = null;
 global.entryTime = null;
+global.latestSignal = null
 
 let isPaused = false;
 let lastPauseMessage = null;
@@ -689,6 +690,11 @@ cron.schedule('* * * * *', async () => {
 
 
     await sendToDiscord(msg);
+    global.latestSignal = {
+    message: msg,
+    date: new Date()
+};
+
   } catch (e) {
     console.error('Erreur visuelle:', e.message);
   }
@@ -702,11 +708,11 @@ app.get('/clear-entry', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
-  const entryHTML = entryPrice ? `
+  const entryHTML = global.entryPrice ? `
     <div class="card">
       <h2>🎯 Entry Price</h2>
-      <p><strong>Prix :</strong> ${entryPrice.toFixed(5)}</p>
-      <p><strong>Direction :</strong> ${entryDirection}</p>
+      <p><strong>Prix :</strong> ${global.entryPrice.toFixed(5)}</p>
+      <p><strong>Direction :</strong> ${global.entryDirection}</p>
       <form method="POST" action="/clear-entry">
         <button class="danger">❌ Supprimer</button>
       </form>
@@ -740,32 +746,108 @@ app.get('/dashboard', (req, res) => {
     <head>
       <title>ZenScalp Dashboard</title>
       <style>
-        body { font-family: sans-serif; margin: 40px; background: #f4f4f4; }
-        .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .warning { background-color: #fff3cd; }
-        .danger { background-color: #e74c3c; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
-        input, select { margin-right: 10px; padding: 6px; }
-        table { border-collapse: collapse; margin-top: 20px; }
-        td, th { padding: 5px; text-align: center; }
-        button { padding: 6px 10px; cursor: pointer; border-radius: 5px; }
+        body {
+          font-family: 'Segoe UI', sans-serif;
+          margin: 40px;
+          background: #1e1f22;
+          color: #dcddde;
+        }
+        h1, h2 {
+          color: #ffffff;
+        }
+        .card {
+          background: #2f3136;
+          padding: 20px;
+          border-radius: 10px;
+          box-shadow: 0 0 10px rgba(0,0,0,0.3);
+          margin-bottom: 20px;
+        }
+        .warning {
+          background-color: #f0ad4e33;
+        }
+        .danger {
+          background-color: #e74c3c;
+          color: white;
+          padding: 8px 12px;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+        }
+        input, select {
+          margin-right: 10px;
+          padding: 6px;
+          background: #23272a;
+          color: #fff;
+          border: 1px solid #444;
+          border-radius: 4px;
+        }
+        table {
+          border-collapse: collapse;
+          margin-top: 20px;
+          width: 100%;
+        }
+        th, td {
+          padding: 6px 10px;
+          text-align: center;
+          border: 1px solid #444;
+        }
+        button {
+          padding: 6px 10px;
+          cursor: pointer;
+          border-radius: 5px;
+          border: none;
+          background-color: #5865f2;
+          color: white;
+        }
+        .discord-style {
+          background: #2f3136;
+          color: #dcddde;
+          border-radius: 8px;
+          padding: 15px;
+          font-family: 'Courier New', monospace;
+          white-space: pre-wrap;
+          line-height: 1.5;
+          font-size: 14px;
+          box-shadow: 0 0 5px rgba(0,0,0,0.3);
+          opacity: 0;
+          animation: fadeIn 1s forwards;
+        }
+        @keyframes fadeIn {
+          to { opacity: 1; }
+        }
       </style>
     </head>
     <body>
       <h1>
-  <img src="ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
-  ZenScalp Dashboard
-</h1>
-      ${entryHTML}
-      <div class="card">
-        <h2>🗓️ Annonces économiques</h2>
-        <form method="POST" action="/dashboard" onsubmit="return updateAnnouncements()">
-          <table id="timesTable">${rows}</table>
-          <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
-          <input type="hidden" name="annonces" id="jsonData">
-          <button type="submit">💾 Enregistrer</button>
-        </form>
+        <img src="ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
+        ZenScalp Dashboard
+      </h1>
+
+      <div style="display: flex; gap: 20px; align-items: flex-start;">
+        <div style="flex: 1;">
+          ${entryHTML}
+
+          <div class="card">
+            <h2>🗓️ Annonces économiques</h2>
+            <form method="POST" action="/dashboard" onsubmit="return updateAnnouncements()">
+              <table id="timesTable">${rows}</table>
+              <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
+              <input type="hidden" name="annonces" id="jsonData">
+              <button type="submit">💾 Enregistrer</button>
+            </form>
+          </div>
+
+          ${performanceTable}
+        </div>
+
+        <div style="flex: 1;">
+          <div class="card" id="notifCard">
+            <h2>🔔 Dernier Signal <span style="font-size: 0.8em; color: #43b581;">🟢 LIVE</span></h2>
+            <div id="notifContent" class="discord-style">Chargement...</div>
+          </div>
+        </div>
       </div>
-      ${performanceTable}
+
       <script>
         function addRow() {
           const table = document.getElementById('timesTable');
@@ -782,11 +864,29 @@ app.get('/dashboard', (req, res) => {
           document.getElementById('jsonData').value = JSON.stringify(data);
           return true;
         }
+
+        async function refreshSignal() {
+          try {
+            const res = await fetch('/latest-signal');
+            const data = await res.json();
+            const el = document.getElementById('notifContent');
+            el.classList.remove('animate-fade');
+            void el.offsetWidth;
+            el.classList.add('animate-fade');
+            el.innerText = data.message;
+          } catch {
+            document.getElementById('notifContent').innerText = "⚠️ Erreur lors du chargement.";
+          }
+        }
+
+        refreshSignal();
+        setInterval(refreshSignal, 60000);
       </script>
     </body>
     </html>
   `);
 });
+
 
 app.post('/dashboard', (req, res) => {
   try {
@@ -834,5 +934,8 @@ app.get('/status', (req, res) => {
   });
 });
 
+app.get('/latest-signal', (req, res) => {
+  res.json(global.latestSignal || { message: 'Aucun signal récent.', date: null });
+});
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp actif sur port ${PORT}`));
