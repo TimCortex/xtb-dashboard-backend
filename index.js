@@ -619,6 +619,9 @@ async function fetchData(period = 5) {
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
 
+  console.log('✅ M5 bougies reçues :', data5m.length);
+
+
   if (!data || !Array.isArray(data.results)) {
     throw new Error(`Données ${period}m invalides depuis Polygon`);
   }
@@ -731,6 +734,9 @@ cron.schedule('* * * * *', async () => {
 
    const data5m = await fetchData(5);
 const data15m = aggregateTo15m(data5m);
+    console.log('✅ M15 bougies générées :', data15m.length);
+console.log('Extrait M15 :', data15m.slice(-1));
+
 
 if (!Array.isArray(data5m) || data5m.length < 50 || !data5m.every(c => c && typeof c.l === 'number')) {
   console.error('❌ Données M5 invalides ou incomplètes');
