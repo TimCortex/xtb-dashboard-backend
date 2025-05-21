@@ -617,6 +617,10 @@ async function fetchData(period = 5) {
     const to = new Date().toISOString().split('T')[0];
     const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
     const { data } = await axios.get(url);
+    if (!data || !Array.isArray(data.results)) {
+  throw new Error('Réponse Polygon invalide : pas de "results"');
+}
+
 
     if (!data?.results?.length) {
       console.error('❌ Aucune donnée reçue de Polygon');
@@ -719,8 +723,17 @@ cron.schedule('* * * * *', async () => {
 }
 
 
-    const data5m = await fetchData(5);
+   const data5m = await fetchData(5);
 const data15m = await fetchData(15);
+
+if (!Array.isArray(data5m) || data5m.length < 50 || !data5m.every(c => c && typeof c.l === 'number')) {
+  console.error('❌ Données M5 invalides ou incomplètes');
+  return;
+}
+if (!Array.isArray(data15m) || data15m.length < 50 || !data15m.every(c => c && typeof c.l === 'number')) {
+  console.error('❌ Données M15 invalides ou incomplètes');
+  return;
+}
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
