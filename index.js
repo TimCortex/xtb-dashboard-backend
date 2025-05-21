@@ -612,39 +612,24 @@ function getISODateNDaysAgo(n) {
 }
 
 async function fetchData(period = 5) {
-  try {
-    const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies
-    const to = new Date().toISOString().split('T')[0];
-    const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
-    const { data } = await axios.get(url);
-    if (!data || !Array.isArray(data.results)) {
-  throw new Error('Réponse Polygon invalide : pas de "results"');
-}
+  const from = getISODateNDaysAgo(3); // recule de 3 jours seulement
+  const to = new Date().toISOString().split('T')[0];
+  const limit = period === 15 ? 150 : 300;
 
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
+  const { data } = await axios.get(url);
 
-    if (!data?.results?.length) {
-      console.error('❌ Aucune donnée reçue de Polygon');
-      return [];
-    }
-
-    const cleaned = data.results
-      .filter(r => r && typeof r.o === 'number' && typeof r.h === 'number' && typeof r.l === 'number' && typeof r.c === 'number')
-      .map(r => ({
-        t: r.t,
-        o: r.o,
-        h: r.h,
-        l: r.l,
-        c: r.c,
-        v: r.v ?? 0
-      }));
-
-    console.log(`[DEBUG] Bougies ${period}m valides : ${cleaned.length}`);
-    return cleaned.reverse();
-  } catch (err) {
-    console.error(`❌ Erreur fetchData(${period}):`, err.message);
-    return [];
+  if (!data || !Array.isArray(data.results)) {
+    throw new Error(`Données ${period}m invalides depuis Polygon`);
   }
+
+  const cleaned = data.results
+    .reverse()
+    .filter(c => c && typeof c.o === 'number' && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number');
+
+  return cleaned.slice(-100); // on ne garde que les 100 dernières
 }
+
 
 /*
 async function fetchDataFromIG(period = 5) {
