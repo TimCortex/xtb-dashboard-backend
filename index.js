@@ -611,24 +611,6 @@ function getISODateNDaysAgo(n) {
   return d.toISOString().split('T')[0];
 }
 
-function aggregateTo15m(data5m) {
-  const aggregated = [];
-  for (let i = 0; i < data5m.length - 2; i += 3) {
-    const slice = data5m.slice(i, i + 3);
-    if (slice.length < 3) continue;
-
-    aggregated.push({
-      t: slice[0].t,
-      o: slice[0].o,
-      h: Math.max(...slice.map(c => c.h)),
-      l: Math.min(...slice.map(c => c.l)),
-      c: slice.at(-1).c,
-      v: slice.reduce((sum, c) => sum + (c.v || 0), 0)
-    });
-  }
-  return aggregated;
-}
-
 async function fetchData(period = 5) {
   const from = getISODateNDaysAgo(3); // recule de 3 jours seulement
   const to = new Date().toISOString().split('T')[0];
@@ -647,6 +629,27 @@ async function fetchData(period = 5) {
 
   return cleaned.slice(-100); // on ne garde que les 100 dernières
 }
+
+function aggregateTo15m(data5m) {
+  const aggregated = [];
+
+  for (let i = 0; i <= data5m.length - 3; i += 3) {
+    const group = data5m.slice(i, i + 3);
+    if (group.length < 3) continue;
+
+    aggregated.push({
+      t: group[0].t,
+      o: group[0].o,
+      h: Math.max(...group.map(c => c.h)),
+      l: Math.min(...group.map(c => c.l)),
+      c: group.at(-1).c,
+      v: group.reduce((acc, c) => acc + (c.v || 0), 0)
+    });
+  }
+
+  return aggregated;
+}
+
 
 
 /*
