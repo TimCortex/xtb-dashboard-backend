@@ -614,10 +614,7 @@ function getISODateNDaysAgo(n) {
 async function fetchData(period = 5) {
   const from = getISODateNDaysAgo(10);
   const to = new Date().toISOString().split('T')[0];
-  
-  // Choix dynamique du limit selon la granularité
-  const limit = period === 15 ? 1500 : 200; // ← au moins 100 bougies valides pour M5
-
+  const limit = 150; // suffisant pour tous les indicateurs
 
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
 
@@ -625,7 +622,7 @@ async function fetchData(period = 5) {
     const { data } = await axios.get(url);
 
     if (!data?.results?.length) {
-      console.error(`❌ Aucune donnée reçue pour ${period}m`);
+      console.error(`❌ Aucune donnée reçue pour ${period}min`);
       return [];
     }
 
@@ -641,12 +638,13 @@ async function fetchData(period = 5) {
       }));
 
     console.log(`[DEBUG] Bougies valides ${period}m : ${cleaned.length}`);
-    return cleaned.reverse(); // ordre croissant
+    return cleaned.reverse(); // plus ancien en premier
   } catch (err) {
     console.error(`❌ Erreur fetchData(${period}):`, err.message);
     return [];
   }
 }
+
 
 
 /*
