@@ -611,6 +611,24 @@ function getISODateNDaysAgo(n) {
   return d.toISOString().split('T')[0];
 }
 
+function aggregateTo15m(data5m) {
+  const aggregated = [];
+  for (let i = 0; i < data5m.length - 2; i += 3) {
+    const slice = data5m.slice(i, i + 3);
+    if (slice.length < 3) continue;
+
+    aggregated.push({
+      t: slice[0].t,
+      o: slice[0].o,
+      h: Math.max(...slice.map(c => c.h)),
+      l: Math.min(...slice.map(c => c.l)),
+      c: slice.at(-1).c,
+      v: slice.reduce((sum, c) => sum + (c.v || 0), 0)
+    });
+  }
+  return aggregated;
+}
+
 async function fetchData(period = 5) {
   const from = getISODateNDaysAgo(3); // recule de 3 jours seulement
   const to = new Date().toISOString().split('T')[0];
@@ -709,7 +727,7 @@ cron.schedule('* * * * *', async () => {
 
 
    const data5m = await fetchData(5);
-const data15m = await fetchData(15);
+const data15m = aggregateTo15m(data5m);
 
 if (!Array.isArray(data5m) || data5m.length < 50 || !data5m.every(c => c && typeof c.l === 'number')) {
   console.error('❌ Données M5 invalides ou incomplètes');
