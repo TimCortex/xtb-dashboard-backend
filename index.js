@@ -27,6 +27,8 @@ global.entryPrice = null;
 global.entryDirection = null;
 global.entryTime = null;
 global.latestSignal = null
+global.lastManualPosition = null;
+
 
 let isPaused = false;
 let lastPauseMessage = null;
@@ -227,6 +229,53 @@ async function getCurrentPrice() {
     return null;
   }
 }
+
+function getIGAuthHeaders() {
+  return axios.post(`${IG_API_URL}/session`, {
+    identifier: IG_USERNAME,
+    password: IG_PASSWORD
+  }, {
+    headers: {
+      'X-IG-API-KEY': IG_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json;version=3'
+    }
+  }).then(res => ({
+    CST: res.headers['cst'],
+    X_SECURITY_TOKEN: res.headers['x-security-token']
+  })).catch(() => null);
+}
+
+async function fetchLatestIGPosition() {
+  try {
+    const auth = await getIGAuthHeaders();
+    if (!auth) return null;
+
+    const res = await axios.get(`${IG_API_URL}/positions`, {
+      headers: {
+        'X-IG-API-KEY': IG_API_KEY,
+        'CST': auth.CST,
+        'X-SECURITY-TOKEN': auth.X_SECURITY_TOKEN,
+        'Accept': 'application/json;version=2'
+      }
+    });
+
+    const pos = res.data.positions.find(p => p.market.epic === IG_ACCOUNT_ID);
+    if (!pos) return null;
+
+    const direction = pos.position.direction;
+    const entry = parseFloat(pos.position.level);
+    const size = pos.position.size;
+    const date = pos.position.createdDate;
+
+    return { entry, direction, size, date };
+  } catch (e) {
+    console.error('❌ Erreur récupération position IG :', e.message);
+    return null;
+  }
+}
+
+
 
 function detectSupportResistanceStrength(candles, lookback = 100, tolerance = 0.0003) {
   const highs = candles.map(c => c.h);
@@ -779,27 +828,21 @@ app.get('/clear-entry', (req, res) => {
   res.send('❌ Entry supprimé via GET');
 });
 
-app.get('/dashboard', (req, res) => {
-  const entryHTML = global.entryPrice ? `
+app.get('/dashboard', async (req, res) => {
+  const igPos = await fetchLatestIGPosition();
+  global.latestIGPosition = igPos;
+
+  const entryHTML = igPos ? `
     <div class="card">
-      <h2>🎯 Entry Price</h2>
-      <p><strong>Prix :</strong> ${global.entryPrice.toFixed(5)}</p>
-      <p><strong>Direction :</strong> ${global.entryDirection}</p>
-      <form method="POST" action="/clear-entry">
-        <button class="danger">❌ Supprimer</button>
-      </form>
+      <h2>🎯 Position manuelle IG détectée</h2>
+      <p><strong>Prix d'entrée :</strong> ${igPos.entry.toFixed(5)}</p>
+      <p><strong>Direction :</strong> ${igPos.direction}</p>
+      <p><strong>Taille :</strong> ${igPos.size}</p>
+      <p><strong>Date :</strong> ${new Date(igPos.date).toLocaleString('fr-FR')}</p>
     </div>
   ` : `
     <div class="card warning">
-      <h2>⚠️ Aucun Entry</h2>
-      <form method="POST" action="/set-entry">
-        <input type="number" name="price" step="0.00001" placeholder="Prix" required />
-        <select name="direction">
-          <option value="BUY">📈 BUY</option>
-          <option value="SELL">📉 SELL</option>
-        </select>
-        <button type="submit">✅ Ajouter</button>
-      </form>
+      <h2>⚠️ Aucune position manuelle détectée</h2>
     </div>
   `;
 
@@ -972,6 +1015,7 @@ app.get('/dashboard', (req, res) => {
     </html>
   `);
 });
+
 
 
 app.post('/dashboard', (req, res) => {
