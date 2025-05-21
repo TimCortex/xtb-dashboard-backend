@@ -612,20 +612,19 @@ function getISODateNDaysAgo(n) {
 }
 
 async function fetchData(period = 5) {
-  const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies disponibles
+  const from = getISODateNDaysAgo(10);
   const to = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
-  const { data } = await axios.get(url);
-  console.log(`[DEBUG] Bougies ${period}m reçues : ${data.results.length}`);
-  return data.results.reverse();
+  
+  // Choix dynamique du limit selon la granularité
+  const limit = period === 15 ? 1500 : 300;
+
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
+
   try {
-    const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies
-    const to = new Date().toISOString().split('T')[0];
-    const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
     const { data } = await axios.get(url);
 
     if (!data?.results?.length) {
-      console.error('❌ Aucune donnée reçue de Polygon');
+      console.error(`❌ Aucune donnée reçue pour ${period}m`);
       return [];
     }
 
@@ -640,13 +639,14 @@ async function fetchData(period = 5) {
         v: r.v ?? 0
       }));
 
-    console.log(`[DEBUG] Bougies ${period}m valides : ${cleaned.length}`);
-    return cleaned.reverse();
+    console.log(`[DEBUG] Bougies valides ${period}m : ${cleaned.length}`);
+    return cleaned.reverse(); // ordre croissant
   } catch (err) {
     console.error(`❌ Erreur fetchData(${period}):`, err.message);
     return [];
   }
 }
+
 
 /*
 async function fetchDataFromIG(period = 5) {
