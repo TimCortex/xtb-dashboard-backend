@@ -760,7 +760,7 @@ async function sendToDiscord(msg) {
   await axios.post(WEBHOOK_URL, { content: msg });
 }
 
-cron.schedule('* * * * *', async () => {
+cron.schedule('*/30 * * * * *', async () => {
   try {
     if (isDuringPauseWindow()) {
   if (!isPaused) {
@@ -1011,7 +1011,7 @@ app.get('/dashboard', async (req, res) => {
         }
 
         refreshSignal();
-        setInterval(refreshSignal, 60000);
+        setInterval(refreshSignal, 30000);
       </script>
     </body>
     </html>
