@@ -612,48 +612,41 @@ function getISODateNDaysAgo(n) {
 }
 
 async function fetchData(period = 5) {
-  const from = getISODateNDaysAgo(3); // recule de 3 jours seulement
+  const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies disponibles
   const to = new Date().toISOString().split('T')[0];
-  const limit = period === 15 ? 150 : 300;
-
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
+  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
   const { data } = await axios.get(url);
+  console.log(`[DEBUG] Bougies ${period}m reçues : ${data.results.length}`);
+  return data.results.reverse();
+  try {
+    const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies
+    const to = new Date().toISOString().split('T')[0];
+    const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
+    const { data } = await axios.get(url);
 
-  console.log('✅ M5 bougies reçues :', data5m.length);
+    if (!data?.results?.length) {
+      console.error('❌ Aucune donnée reçue de Polygon');
+      return [];
+    }
 
+    const cleaned = data.results
+      .filter(r => r && typeof r.o === 'number' && typeof r.h === 'number' && typeof r.l === 'number' && typeof r.c === 'number')
+      .map(r => ({
+        t: r.t,
+        o: r.o,
+        h: r.h,
+        l: r.l,
+        c: r.c,
+        v: r.v ?? 0
+      }));
 
-  if (!data || !Array.isArray(data.results)) {
-    throw new Error(`Données ${period}m invalides depuis Polygon`);
+    console.log(`[DEBUG] Bougies ${period}m valides : ${cleaned.length}`);
+    return cleaned.reverse();
+  } catch (err) {
+    console.error(`❌ Erreur fetchData(${period}):`, err.message);
+    return [];
   }
-
-  const cleaned = data.results
-    .reverse()
-    .filter(c => c && typeof c.o === 'number' && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number');
-
-  return cleaned.slice(-100); // on ne garde que les 100 dernières
 }
-
-function aggregateTo15m(data5m) {
-  const aggregated = [];
-
-  for (let i = 0; i <= data5m.length - 3; i += 3) {
-    const group = data5m.slice(i, i + 3);
-    if (group.length < 3) continue;
-
-    aggregated.push({
-      t: group[0].t,
-      o: group[0].o,
-      h: Math.max(...group.map(c => c.h)),
-      l: Math.min(...group.map(c => c.l)),
-      c: group.at(-1).c,
-      v: group.reduce((acc, c) => acc + (c.v || 0), 0)
-    });
-  }
-
-  return aggregated;
-}
-
-
 
 /*
 async function fetchDataFromIG(period = 5) {
@@ -732,20 +725,8 @@ cron.schedule('* * * * *', async () => {
 }
 
 
-   const data5m = await fetchData(5);
-const data15m = aggregateTo15m(data5m);
-    console.log('✅ M15 bougies générées :', data15m.length);
-console.log('Extrait M15 :', data15m.slice(-1));
-
-
-if (!Array.isArray(data5m) || data5m.length < 50 || !data5m.every(c => c && typeof c.l === 'number')) {
-  console.error('❌ Données M5 invalides ou incomplètes');
-  return;
-}
-if (!Array.isArray(data15m) || data15m.length < 50 || !data15m.every(c => c && typeof c.l === 'number')) {
-  console.error('❌ Données M15 invalides ou incomplètes');
-  return;
-}
+    const data5m = await fetchData(5);
+const data15m = await fetchData(15);
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
