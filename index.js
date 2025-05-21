@@ -616,7 +616,8 @@ async function fetchData(period = 5) {
   const to = new Date().toISOString().split('T')[0];
   
   // Choix dynamique du limit selon la granularité
-  const limit = period === 15 ? 1500 : 300;
+  const limit = period === 15 ? 1500 : 200; // ← au moins 100 bougies valides pour M5
+
 
   const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
 
