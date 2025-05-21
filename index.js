@@ -20,6 +20,8 @@ const IG_API_URL = 'https://api.ig.com/gateway/deal';
 const IG_USERNAME = 'timagnus';
 const IG_PASSWORD = 'Lyautey#1';
 const IG_API_KEY = 'abd969f1ef5b6c5abd190d6deab2ae3401dfebc1';
+const IG_ACCOUNT_ID = 'EXM4S'; // remplace par ton vrai identifiant
+
 
 const ANNOUNCEMENT_FILE = path.resolve('announcements.json');
 const PERFORMANCE_FILE = path.resolve('performance.json');
