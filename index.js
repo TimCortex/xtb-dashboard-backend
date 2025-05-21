@@ -228,6 +228,33 @@ async function getCurrentPrice() {
   }
 }
 
+function detectSupportResistanceStrength(candles, lookback = 100, tolerance = 0.0003) {
+  const highs = candles.map(c => c.h);
+  const lows = candles.map(c => c.l);
+
+  const lastHigh = Math.max(...highs.slice(-20));
+  const lastLow = Math.min(...lows.slice(-20));
+
+  let supportTouches = 0;
+  let resistanceTouches = 0;
+
+  for (let i = 0; i < lookback; i++) {
+    const c = candles[i];
+    if (Math.abs(c.l - lastLow) <= tolerance) supportTouches++;
+    if (Math.abs(c.h - lastHigh) <= tolerance) resistanceTouches++;
+  }
+
+  const supportStrength = supportTouches >= 4 ? 3 : supportTouches >= 2 ? 2 : 1;
+  const resistanceStrength = resistanceTouches >= 4 ? 3 : resistanceTouches >= 2 ? 2 : 1;
+
+  return {
+    lastHigh,
+    lastLow,
+    supportStrength,
+    resistanceStrength
+  };
+}
+
 function calculateConfidence(bull, bear) {
   const total = bull + bear;
   return {
@@ -393,20 +420,21 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   }
 
   // Proximité res/sup
-  const lastHigh = high.slice(-20).reduce((a, b) => Math.max(a, b), 0);
-  const lastLow = low.slice(-20).reduce((a, b) => Math.min(a, b), Infinity);
-  const pipDistance = 0.0006;
+  const { lastHigh, lastLow, supportStrength, resistanceStrength } = detectSupportResistanceStrength(data);
 
-  if (price > lastHigh - pipDistance) {
-  bull -= 0.4;
-  bear += 0.2; // contexte favorable à une vente
-  details.push('⚠️ Proximité résistance (-0.4 bull, +0.2 bear)');
+const pipDistance = 0.0006;
+if (price > lastHigh - pipDistance) {
+  const penalty = 0.2 * resistanceStrength;
+  bull -= penalty;
+  bear += penalty / 2;
+  details.push(`⚠️ Proximité résistance (force ${resistanceStrength}) : -${penalty.toFixed(2)} bull`);
 }
 
-  if (price < lastLow + pipDistance) {
-  bear -= 0.4;
-  bull += 0.2; // contexte favorable à un achat
-  details.push('⚠️ Proximité support (-0.4 bear, +0.2 bull)');
+if (price < lastLow + pipDistance) {
+  const penalty = 0.2 * supportStrength;
+  bear -= penalty;
+  bull += penalty / 2;
+  details.push(`⚠️ Proximité support (force ${supportStrength}) : -${penalty.toFixed(2)} bear`);
 }
 
   // Détection d'un range étroit sur les 6 dernières bougies
