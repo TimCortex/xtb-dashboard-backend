@@ -332,6 +332,23 @@ function analyzeTrendM5M15(data5m, data15m) {
 // ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
 
 function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'INDÉTERMINÉE') {
+
+   data = data.filter(c => c && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number' && typeof c.o === 'number');
+
+  if (data.length < 50) {
+    console.error('❌ Données insuffisantes pour analyse technique.');
+    return {
+      price: null,
+      signal: 'WAIT',
+      confidence: 0,
+      confidenceBear: 0,
+      pattern: null,
+      trend5,
+      trend15,
+      details: ['❌ Analyse impossible - bougies invalides ou incomplètes.'],
+      commentaire: 'Erreur de données.'
+    };
+  }
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -595,13 +612,36 @@ function getISODateNDaysAgo(n) {
 }
 
 async function fetchData(period = 5) {
-  const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies disponibles
-  const to = new Date().toISOString().split('T')[0];
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
-  const { data } = await axios.get(url);
-  console.log(`[DEBUG] Bougies ${period}m reçues : ${data.results.length}`);
-  return data.results.reverse();
+  try {
+    const from = getISODateNDaysAgo(10); // ← recule de 10 jours pour avoir 300 bougies
+    const to = new Date().toISOString().split('T')[0];
+    const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=300&apiKey=${POLYGON_API_KEY}`;
+    const { data } = await axios.get(url);
+
+    if (!data?.results?.length) {
+      console.error('❌ Aucune donnée reçue de Polygon');
+      return [];
+    }
+
+    const cleaned = data.results
+      .filter(r => r && typeof r.o === 'number' && typeof r.h === 'number' && typeof r.l === 'number' && typeof r.c === 'number')
+      .map(r => ({
+        t: r.t,
+        o: r.o,
+        h: r.h,
+        l: r.l,
+        c: r.c,
+        v: r.v ?? 0
+      }));
+
+    console.log(`[DEBUG] Bougies ${period}m valides : ${cleaned.length}`);
+    return cleaned.reverse();
+  } catch (err) {
+    console.error(`❌ Erreur fetchData(${period}):`, err.message);
+    return [];
+  }
 }
+
 /*
 async function fetchDataFromIG(period = 5) {
   try {
