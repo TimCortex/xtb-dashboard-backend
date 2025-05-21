@@ -612,13 +612,22 @@ function getISODateNDaysAgo(n) {
 }
 
 async function fetchData(period = 5) {
-  const from = getISODateNDaysAgo(10);
-  const to = new Date().toISOString().split('T')[0];
-  const limit = 150; // suffisant pour tous les indicateurs
-
-  const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
-
   try {
+    const now = new Date();
+    const fromDate = new Date(now);
+    if (period === 15) {
+      fromDate.setDate(fromDate.getDate() - 3); // 3 jours pour M15
+    } else if (period === 5) {
+      fromDate.setDate(fromDate.getDate() - 2); // 2 jours pour M5
+    } else {
+      fromDate.setDate(fromDate.getDate() - 5); // fallback
+    }
+
+    const from = fromDate.toISOString().split('T')[0];
+    const to = now.toISOString().split('T')[0];
+    const limit = period === 15 ? 3000 : period === 5 ? 1000 : 500;
+
+    const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/${period}/minute/${from}/${to}?adjusted=true&sort=desc&limit=${limit}&apiKey=${POLYGON_API_KEY}`;
     const { data } = await axios.get(url);
 
     if (!data?.results?.length) {
@@ -638,12 +647,13 @@ async function fetchData(period = 5) {
       }));
 
     console.log(`[DEBUG] Bougies valides ${period}m : ${cleaned.length}`);
-    return cleaned.reverse(); // plus ancien en premier
+    return cleaned.reverse();
   } catch (err) {
     console.error(`❌ Erreur fetchData(${period}):`, err.message);
     return [];
   }
 }
+
 
 
 
