@@ -600,6 +600,11 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Ichimoku breakdown (+0.7 bear)');
   }
 
+   // Calcul de la confiance
+  const total = bull + bear;
+  let confidence = total > 0 ? (bull / total) * 100 : 0;
+  let confidenceBear = total > 0 ? (bear / total) * 100 : 0;
+
   // Volatilité
   const atr = technicalIndicators.ATR.calculate({
   period: 14,
@@ -660,10 +665,7 @@ if (lastATR) {
     details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
   }
 
-  // Calcul de la confiance
-  const total = bull + bear;
-  let confidence = total > 0 ? (bull / total) * 100 : 0;
-  let confidenceBear = total > 0 ? (bear / total) * 100 : 0;
+ 
 
   // Détermination du signal
   const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
