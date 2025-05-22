@@ -962,7 +962,7 @@ app.get('/dashboard', async (req, res) => {
             <h2>🔔 Dernier Signal <span style="font-size: 0.8em; color: #43b581;">🟢 LIVE</span></h2>
             <div id="notifContent" class="signal-box">Chargement...</div>
             <div id="notifTime" style="font-size: 12px; margin-top: 4px; color: #999;"></div>
-            <audio id="notifSound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" preload="auto"></audio>
+            <audio id="notifSound" src="	https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
           </div>
         </div>
       </div>
