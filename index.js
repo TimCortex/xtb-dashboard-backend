@@ -136,35 +136,12 @@ function scheduleSignalEvaluation(signalObj) {
   const { direction, price: entryPrice, context } = signalObj;
   const takeProfit = 1.5; // TP en pips
   const stopLoss = 5;     // SL en pips
-  const checkInterval = 5000; // toutes les 5 secondes
-  const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
+  const checkInterval = 5000;
+  const maxWaitTime = 10 * 60 * 1000;
   const startTime = Date.now();
 
   const interval = setInterval(async () => {
     const currentTime = Date.now();
-
-    // Expiration sans TP/SL atteint
-    if (currentTime - startTime > maxWaitTime) {
-      clearInterval(interval);
-      activeSignals.delete(id);
-      console.log('❌ Signal expiré sans TP/SL – enregistré comme échec');
-
-      const latestPrice = await getCurrentPrice();
-      const result = {
-        timestamp: new Date().toISOString(),
-        direction,
-        entryPrice,
-        exitPrice: latestPrice,
-        pips: ((latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
-        outcome: 'fail',
-        context
-      };
-
-      const existing = loadSignalResults();
-      existing.push(result);
-      saveSignalResults(existing);
-      return;
-    }
 
     const latestPrice = await getCurrentPrice();
     if (!latestPrice) return;
@@ -176,14 +153,20 @@ function scheduleSignalEvaluation(signalObj) {
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
+    // ✅ Si TP/SL atteint
     if (outcome) {
       clearInterval(interval);
+      activeSignals.delete(id);
+
+      const finalPrice = await getCurrentPrice();
+      const finalPips = ((finalPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1);
+
       const result = {
         timestamp: new Date().toISOString(),
         direction,
         entryPrice,
-        exitPrice: latestPrice,
-        pips: roundedPips,
+        exitPrice: finalPrice,
+        pips: finalPips,
         outcome,
         context
       };
@@ -191,10 +174,34 @@ function scheduleSignalEvaluation(signalObj) {
       const existing = loadSignalResults();
       existing.push(result);
       saveSignalResults(existing);
+      return;
+    }
+
+    // ✅ Si le temps max est dépassé sans TP/SL
+    if (currentTime - startTime > maxWaitTime) {
+      clearInterval(interval);
       activeSignals.delete(id);
+
+      const finalPrice = await getCurrentPrice();
+      const finalPips = ((finalPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1);
+
+      const result = {
+        timestamp: new Date().toISOString(),
+        direction,
+        entryPrice,
+        exitPrice: finalPrice,
+        pips: finalPips,
+        outcome: 'fail',
+        context
+      };
+
+      const existing = loadSignalResults();
+      existing.push(result);
+      saveSignalResults(existing);
     }
   }, checkInterval);
 }
+
 
 
 
