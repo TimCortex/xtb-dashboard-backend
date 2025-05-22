@@ -1209,6 +1209,8 @@ app.get('/dashboard', async (req, res) => {
           ${entryHTML}
           <div id="tagSummary">${signalSummaryHTML}</div>
           <div id="signalHistory">${signalHistoryHTML}</div>
+          <div id="signalHistory"></div>
+
 
           <div class="card">
             <h2>🗓️ Annonces économiques</h2>
@@ -1295,6 +1297,16 @@ app.get('/dashboard', async (req, res) => {
         plugins: { legend: { position: 'bottom' } }
       }
     });
+  }
+
+  async function refreshHistory() {
+    try {
+      const res = await fetch('/latest-signal-history');
+      const html = await res.text();
+      document.getElementById('signalHistory').innerHTML = html;
+    } catch (e) {
+      document.getElementById('signalHistory').innerHTML = "<p>⚠️ Erreur chargement historique</p>";
+    }
   }
 
   async function refreshTags() {
@@ -1384,6 +1396,12 @@ app.get('/latest-tags-summary', (req, res) => {
   const html = getSignalSummaryHTML();
   res.send(html);
 });
+
+app.get('/latest-signal-history', (req, res) => {
+  const html = getSignalHistoryHTML();
+  res.send(html);
+});
+
 
 
 app.get('/status', (req, res) => {
