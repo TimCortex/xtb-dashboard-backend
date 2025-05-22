@@ -244,6 +244,55 @@ function loadSignalHistory() {
   }
 }
 
+function getSignalHistoryHTML() {
+  const history = loadSignalResults().slice(-50).reverse(); // Derniers signaux, max 50
+
+  if (history.length === 0) {
+    return `
+      <div class="card">
+        <h2>📜 Historique des signaux</h2>
+        <p>Aucun signal enregistré pour l’instant.</p>
+      </div>`;
+  }
+
+  const rows = history.map(sig => {
+    const date = new Date(sig.timestamp).toLocaleString('fr-FR');
+    const color = sig.outcome === 'success' ? '#28a745' : sig.outcome === 'fail' ? '#e74c3c' : '#999';
+    const bg = sig.outcome === 'success' ? '#1f2e1f' : sig.outcome === 'fail' ? '#2e1f1f' : '#2f3136';
+
+    return `
+      <tr style="background: ${bg}; color: ${color};">
+        <td>${date}</td>
+        <td>${sig.direction}</td>
+        <td>${sig.entryPrice?.toFixed(5)}</td>
+        <td>${sig.exitPrice?.toFixed(5) ?? '—'}</td>
+        <td>${sig.pips ?? '—'}</td>
+        <td style="font-weight: bold;">${sig.outcome === 'success' ? '✅' : sig.outcome === 'fail' ? '❌' : '⏳'}</td>
+      </tr>`;
+  });
+
+  return `
+    <div class="card">
+      <h2>📜 Historique des signaux (derniers 50)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Direction</th>
+            <th>Entrée</th>
+            <th>Sortie</th>
+            <th>Pips</th>
+            <th>Résultat</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+
 function saveSignalHistory(history) {
   fs.writeFileSync(SIGNAL_LOG_PATH, JSON.stringify(history, null, 2));
 }
