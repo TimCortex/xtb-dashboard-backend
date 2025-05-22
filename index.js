@@ -139,6 +139,7 @@ function scheduleSignalEvaluation(signalObj) {
   const checkInterval = 5000; // toutes les 5 secondes
   const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
   const startTime = Date.now();
+  let retryPrice = null; // ✅ ici
 
   const interval = setInterval(async () => {
     const currentTime = Date.now();
