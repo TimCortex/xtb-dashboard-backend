@@ -6,6 +6,7 @@ const technicalIndicators = require('technicalindicators');
 const fs = require('fs');
 const path = require('path');
 const bodyParser = require('body-parser');
+const SIGNAL_LOG_PATH = './signal_history.json';
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -34,6 +35,51 @@ global.lastManualPosition = null;
 
 let isPaused = false;
 let lastPauseMessage = null;
+
+//
+function loadSignalHistory() {
+  try {
+    return JSON.parse(fs.readFileSync(SIGNAL_LOG_PATH, 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+function saveSignalHistory(history) {
+  fs.writeFileSync(SIGNAL_LOG_PATH, JSON.stringify(history, null, 2));
+}
+
+function logSignal({ signal, price, time }) {
+  const history = loadSignalHistory();
+  history.push({ signal, price, time, success: null });
+  saveSignalHistory(history);
+}
+
+async function checkSignalSuccess({ signal, price, time }) {
+  const getCurrentPrice = require('./priceHelper'); // ou une fonction directe
+  const current = await getCurrentPrice();
+  const pips = Math.round((current - price) * 10000 * (signal === 'BUY' ? 1 : -1));
+  const success = pips >= 10;
+
+  const history = loadSignalHistory();
+  const idx = history.findIndex(s => s.time === time);
+  if (idx >= 0) history[idx].success = success;
+  saveSignalHistory(history);
+}
+
+// Exemple d’appel
+function emitSignal(signal, price) {
+  const time = Date.now();
+  logSignal({ signal, price, time });
+
+  setTimeout(() => checkSignalSuccess({ signal, price, time }), 60000);
+}
+
+module.exports = {
+  emitSignal,
+  loadSignalHistory
+};
+//
 
 function loadAnnouncementWindows() {
   try {
