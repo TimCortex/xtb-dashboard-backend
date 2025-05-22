@@ -649,16 +649,26 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const signal = adaptiveScore >= 2.0 ? 'BUY' : adaptiveScore <= -2.0 ? 'SELL' : 'WAIT';
 
   return {
-    price,
-    signal,
-    confidence: null,
-    confidenceBear: null,
-    pattern,
+  price,
+  signal,
+  confidence: null,
+  confidenceBear: null,
+  pattern,
+  trend5,
+  trend15,
+  tags,
+  details,
+  commentaire: null,
+  context: {
+    ema50: ema50.at(-1),
+    ema100: ema100.at(-1),
+    rsi: rsi.at(-1),
+    macd: macd.at(-1),
+    stoch: stoch.at(-1),
+    ichimoku: ichimoku.at(-1),
     trend5,
     trend15,
-    tags,
-    details,
-    commentaire: null
+    tags
   };
 }
 
@@ -797,20 +807,11 @@ const data15m = await fetchData(15);
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
 
-    if (analysis.signal !== 'WAIT') {
+   if (analysis.signal !== 'WAIT') {
   scheduleSignalEvaluation({
     direction: analysis.signal,
     price,
-    context: {
-      ema50: ema50.at(-1),
-      ema100: ema100.at(-1),
-      rsi: rsi.at(-1),
-      macd: macd.at(-1),
-      stoch: stoch.at(-1),
-      ichimoku: ichimoku.at(-1),
-      trend5,
-      trend15
-    }
+    context: analysis.context
   });
 }
 
