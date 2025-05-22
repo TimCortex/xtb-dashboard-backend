@@ -51,46 +51,81 @@ function loadSignalResults() {
   }
 }
 
+// ZenScalp - version enrichie avec logique adaptative avancée : tags + combinaisons + contexte
+
 function getAdaptiveWeights() {
   const all = loadSignalResults();
-  const scoreMap = {};
-  const counts = {};
+  const tagStats = {};
+  const comboStats = {};
 
   for (const sig of all) {
-    for (const tag of sig.context?.tags || []) {
-      if (!counts[tag]) counts[tag] = { success: 0, fail: 0 };
-      sig.success ? counts[tag].success++ : counts[tag].fail++;
+    const tags = sig.context?.tags || [];
+    const outcome = sig.outcome;
+
+    for (const tag of tags) {
+      if (!tagStats[tag]) tagStats[tag] = { success: 0, fail: 0 };
+      if (outcome === 'success') tagStats[tag].success++;
+      else if (outcome === 'fail') tagStats[tag].fail++;
+    }
+
+    // Combinations
+    const sorted = [...tags].sort();
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        const comboKey = `${sorted[i]}|${sorted[j]}`;
+        if (!comboStats[comboKey]) comboStats[comboKey] = { success: 0, fail: 0 };
+        if (outcome === 'success') comboStats[comboKey].success++;
+        else if (outcome === 'fail') comboStats[comboKey].fail++;
+      }
     }
   }
 
-  for (const tag in counts) {
-    const total = counts[tag].success + counts[tag].fail;
-    const rate = total > 0 ? counts[tag].success / total : 0.5;
-    scoreMap[tag] = +(rate * 1.2 - 0.3).toFixed(2);
+  const scoreMap = {};
+  for (const tag in tagStats) {
+    const { success, fail } = tagStats[tag];
+    const total = success + fail;
+    const rate = total ? success / total : 0.5;
+    scoreMap[tag] = +(rate * 2 - 1).toFixed(2); // Échelle de -1 à +1
   }
 
-  return scoreMap;
+  const comboMap = {};
+  for (const combo in comboStats) {
+    const { success, fail } = comboStats[combo];
+    const total = success + fail;
+    const rate = total ? success / total : 0.5;
+    comboMap[combo] = +(rate * 1.0 - 0.5).toFixed(2); // Échelle plus douce : -0.5 à +0.5
+  }
+
+  return { scoreMap, comboMap };
 }
+
+function applyDeepWeights(tags, context = {}) {
+  const { scoreMap, comboMap } = getAdaptiveWeights();
+  let total = 0;
+
+  // Poids individuel
+  for (const tag of tags) {
+    total += scoreMap[tag] ?? 0.2;
+  }
+
+  // Poids combinés
+  const sorted = [...tags].sort();
+  for (let i = 0; i < sorted.length; i++) {
+    for (let j = i + 1; j < sorted.length; j++) {
+      const key = `${sorted[i]}|${sorted[j]}`;
+      total += comboMap[key] ?? 0;
+    }
+  }
+
+  return total;
+}
+
 
 function applyWeights(tags, defaultScore = 0.4) {
   const weights = getAdaptiveWeights();
   return tags.reduce((sum, tag) => sum + (weights[tag] ?? defaultScore), 0);
 }
 
-// Exemple d'intégration dans une analyse future :
-function exampleAdaptiveAnalysis() {
-  const tags = [
-    'RSI>50',
-    'MACD haussier',
-    'Stochastique haussier'
-  ];
-  const finalScore = applyWeights(tags);
-  console.log('Score adaptatif:', finalScore);
-}
-
-function saveSignalResults(results) {
-  fs.writeFileSync(SIGNAL_RESULT_FILE, JSON.stringify(results, null, 2));
-}
 
 // ZenScalp - version enrichie avec boucle de suivi TP/SL asynchrone
 
@@ -660,7 +695,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     if (supportStrength >= 2) tags.push('Support fort'), details.push(`🟢 Support détecté (force ${supportStrength}/3)`);
   }
 
-  let adaptiveScore = applyWeights(tags);
+  let adaptiveScore = applyDeepWeights(tags, context);
   let proximityBonus = 0;
   if (distanceToSupport <= lastATR * 0.5) proximityBonus += supportStrength * (adaptiveScore >= 0 ? 0.5 : -0.5);
   if (distanceToResistance <= lastATR * 0.5) proximityBonus += resistanceStrength * (adaptiveScore <= 0 ? 0.5 : -0.5);
