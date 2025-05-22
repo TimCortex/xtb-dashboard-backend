@@ -848,20 +848,33 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
 
   // Anti-répétition
   if (context?.lastSignal === signal && signal !== 'WAIT') {
-    const prevPrice = global.latestSignal?.price || 0;
-    const priceDiff = (price - prevPrice) * 10000 * (signal === 'BUY' ? 1 : -1);
-    const priceThreshold = 2;
-    const indicatorsChanged =
-      tags.some(t => !(context?.tags || []).includes(t)) ||
-      (context?.tags || []).some(t => !tags.includes(t)) ||
-      context?.tags?.length !== tags.length;
-    if (!indicatorsChanged || priceDiff < priceThreshold) {
-      signal = 'WAIT';
-      confidence = 50;
-      confidenceBear = 50;
-      details.push('⏸ Signal identique sans évolution notable — mis en attente.');
-    }
+  const prevPrice = global.latestSignal?.price || 0;
+  const priceDiff = (price - prevPrice) * 10000; // toujours positif ou négatif selon variation
+  const priceThreshold = 2;
+
+  const indicatorsChanged =
+    tags.some(t => !(context?.tags || []).includes(t)) ||
+    (context?.tags || []).some(t => !tags.includes(t)) ||
+    context?.tags?.length !== tags.length;
+
+  const diffAbs = Math.abs(priceDiff);
+
+  console.log('🔁 Anti-répétition check:', {
+    signal,
+    prevPrice,
+    currentPrice: price,
+    diffAbs: diffAbs.toFixed(1),
+    indicatorsChanged
+  });
+
+  if (!indicatorsChanged || diffAbs < priceThreshold) {
+    signal = 'WAIT';
+    confidence = 50;
+    confidenceBear = 50;
+    details.push('⏸ Signal identique sans évolution notable — mis en attente.');
   }
+}
+
 
   let commentaire = null;
   if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
