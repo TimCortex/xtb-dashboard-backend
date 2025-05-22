@@ -776,12 +776,24 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push(`⚡ Accélération stochastique (${stoch.at(-2).k.toFixed(1)} ➝ ${lastStoch.k.toFixed(1)})`);
   }
 
-  if (context?.lastSignal === signal && signal !== 'WAIT' && !momentumTrigger) {
+  // Logique anti-répétition intelligente
+if (context?.lastSignal === signal && signal !== 'WAIT') {
+  const prevPrice = global.latestSignal?.price || 0;
+  const priceDiff = (price - prevPrice) * 10000 * (signal === 'BUY' ? 1 : -1); // en pips
+
+  const priceThreshold = 2; // seuil minimal d'écart pour répéter le même signal
+  const indicatorsChanged =
+    tags.some(t => !(context?.tags || []).includes(t)) ||
+    (context?.tags || []).some(t => !tags.includes(t)) ||
+    context?.tags?.length !== tags.length;
+
+  if (!indicatorsChanged || priceDiff < priceThreshold) {
     signal = 'WAIT';
     confidence = 50;
     confidenceBear = 50;
-    details.push('⏸ Signal répété sans nouveau momentum – mise en attente');
+    details.push('⏸ Signal identique sans évolution notable — mis en attente.');
   }
+}
 
   let commentaire = null;
   if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
@@ -988,10 +1000,11 @@ cron.schedule('*/30 * * * * *', async () => {
     await sendToDiscord(msg);
 
     global.latestSignal = {
-      message: msg,
-      date: new Date(),
-      context: analysis.context
-    };
+  message: msg,
+  date: new Date(),
+  context: analysis.context,
+  price // 🔥 très important pour l’écart de prix
+};
 
   } catch (e) {
     console.error('Erreur visuelle:', e.message);
