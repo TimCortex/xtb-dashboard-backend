@@ -463,31 +463,12 @@ function getSignalSummaryHTML() {
           </table>
         </div>
         <div style="width: 200px;">
-          <canvas id="pieChart"></canvas>
+          <canvas id="pieChart" data-success="${successCount}" data-fail="${failCount}"></canvas>
         </div>
       </div>
-      <script>
-        setTimeout(() => {
-          const ctx = document.getElementById('pieChart').getContext('2d');
-          if (window.myChart) window.myChart.destroy();
-          window.myChart = new Chart(ctx, {
-            type: 'pie',
-            data: {
-              labels: ['Succès', 'Échecs'],
-              datasets: [{
-                data: [${successCount}, ${failCount}],
-                backgroundColor: ['#28a745', '#e74c3c'],
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: { legend: { position: 'bottom' } }
-            }
-          });
-        }, 100);
-      </script>
     </div>`;
 }
+
 
 
 async function getCurrentPrice() {
@@ -1134,64 +1115,91 @@ app.get('/dashboard', async (req, res) => {
       </div>
 
       <script>
-        let lastSignalText = '';
+  let lastSignalText = '';
 
-        function addRow() {
-          const table = document.getElementById('timesTable');
-          const row = table.insertRow();
-          row.innerHTML = '<td><input type="time" name="times" required></td>' +
-                          '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>';
-        }
-
-        function updateAnnouncements() {
-          const inputs = document.getElementsByName('times');
-          const data = [];
-          for (const input of inputs) {
-            if (input.value) data.push({ time: input.value });
-          }
-          document.getElementById('jsonData').value = JSON.stringify(data);
-          return true;
-        }
-
-        async function refreshSignal() {
-          try {
-            const res = await fetch('/latest-signal');
-            const data = await res.json();
-            const el = document.getElementById('notifContent');
-            const timeEl = document.getElementById('notifTime');
-
-            if (data.message && data.message !== lastSignalText) {
-              el.innerText = data.message;
-              const date = new Date(data.date);
-              const timeStr = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-              timeEl.innerText = "🕒 Signal généré à " + timeStr;
-              lastSignalText = data.message;
-
-              const sound = document.getElementById('notifSound');
-              if (sound) sound.play();
-            }
-          } catch (e) {
-            document.getElementById('notifContent').innerText = "⚠️ Erreur lors du chargement.";
-            document.getElementById('notifTime').innerText = '';
-          }
-        }
-
-        refreshSignal();
-        async function refreshTags() {
-  try {
-    const res = await fetch('/latest-tags-summary');
-    const html = await res.text();
-    document.getElementById('tagSummary').innerHTML = html;
-  } catch (e) {
-    document.getElementById('tagSummary').innerHTML = "<p>⚠️ Erreur chargement tags</p>";
+  function addRow() {
+    const table = document.getElementById('timesTable');
+    const row = table.insertRow();
+    row.innerHTML = '<td><input type="time" name="times" required></td>' +
+                    '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>';
   }
-}
 
-refreshTags();
-setInterval(refreshTags, 30000); // toutes les 30s
+  function updateAnnouncements() {
+    const inputs = document.getElementsByName('times');
+    const data = [];
+    for (const input of inputs) {
+      if (input.value) data.push({ time: input.value });
+    }
+    document.getElementById('jsonData').value = JSON.stringify(data);
+    return true;
+  }
 
-        setInterval(refreshSignal, 30000);
-      </script>
+  async function refreshSignal() {
+    try {
+      const res = await fetch('/latest-signal');
+      const data = await res.json();
+      const el = document.getElementById('notifContent');
+      const timeEl = document.getElementById('notifTime');
+
+      if (data.message && data.message !== lastSignalText) {
+        el.innerText = data.message;
+        const date = new Date(data.date);
+        const timeStr = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        timeEl.innerText = "🕒 Signal généré à " + timeStr;
+        lastSignalText = data.message;
+
+        const sound = document.getElementById('notifSound');
+        if (sound) sound.play();
+      }
+    } catch (e) {
+      document.getElementById('notifContent').innerText = "⚠️ Erreur lors du chargement.";
+      document.getElementById('notifTime').innerText = '';
+    }
+  }
+
+  function renderPieChart(success, fail) {
+    const ctx = document.getElementById('pieChart')?.getContext('2d');
+    if (!ctx) return;
+    if (window.myChart) window.myChart.destroy();
+
+    window.myChart = new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: ['Succès', 'Échecs'],
+        datasets: [{
+          data: [success, fail],
+          backgroundColor: ['#28a745', '#e74c3c'],
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+  }
+
+  async function refreshTags() {
+    try {
+      const res = await fetch('/latest-tags-summary');
+      const html = await res.text();
+      document.getElementById('tagSummary').innerHTML = html;
+
+      const canvas = document.getElementById('pieChart');
+      if (canvas) {
+        const success = parseInt(canvas.getAttribute('data-success')) || 0;
+        const fail = parseInt(canvas.getAttribute('data-fail')) || 0;
+        renderPieChart(success, fail);
+      }
+    } catch (e) {
+      document.getElementById('tagSummary').innerHTML = "<p>⚠️ Erreur chargement tags</p>";
+    }
+  }
+
+  refreshSignal();
+  refreshTags();
+  setInterval(refreshSignal, 30000);
+  setInterval(refreshTags, 30000);
+</script>
     </body>
     </html>
   `);
