@@ -647,12 +647,14 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   // Calcul du score adaptatif global
   const adaptiveScore = applyWeights(tags);
   const signal = adaptiveScore >= 2.0 ? 'BUY' : adaptiveScore <= -2.0 ? 'SELL' : 'WAIT';
+  const { confidence, confidenceBear } = calculateConfidence(bull, bear);
+
 
   return {
   price,
   signal,
-  confidence: null,
-  confidenceBear: null,
+  confidence,
+  confidenceBear,
   pattern,
   trend5,
   trend15,
