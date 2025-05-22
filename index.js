@@ -774,36 +774,72 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   let confidenceBear = +(100 - confidence).toFixed(1);
   let signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
 
-  let commentaire = null;
-  if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
-    commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
-    details.push(commentaire);
-  }
-
-  if ((signal === 'BUY' && trend15 === 'BAISSIÈRE') || (signal === 'SELL' && trend15 === 'HAUSSIÈRE')) {
-    details.push('⛔ Conflit avec la tendance M15 — signal annulé.');
+  // ⚠️ Nouvelle logique tendance / pullback
+  if (
+    (signal === 'BUY' && trend5 === 'BAISSIÈRE') ||
+    (signal === 'SELL' && trend5 === 'HAUSSIÈRE')
+  ) {
     signal = 'WAIT';
-    confidence = 50;
-    confidenceBear = 50;
+    details.push('⏸ Signal annulé - contradictoire avec tendance M5');
+  } else if (
+    (signal === 'BUY' && trend15 === 'BAISSIÈRE') ||
+    (signal === 'SELL' && trend15 === 'HAUSSIÈRE')
+  ) {
+    const isNearSR = distanceToSupport < lastATR * 0.5 || distanceToResistance < lastATR * 0.5;
+    const hasPattern = pattern != null;
+    if (!isNearSR || !hasPattern) {
+      confidence -= 10;
+      details.push('⚠️ Score réduit - contresens M15 sans pullback clair');
+      if (confidence < 65 && confidence > 35) {
+        signal = 'WAIT';
+        confidence = 50;
+        confidenceBear = 50;
+        details.push('⏸ Signal neutralisé après pénalité tendance M15');
+      }
+    } else {
+      details.push('🔄 Pullback détecté - contre-tendance M15 accepté');
+    }
   }
 
-  // Logique anti-répétition intelligente
+  // Momentum triggers (inchangés)
+  let momentumTrigger = false;
+  if (macd.length >= 2) {
+    const prev = macd.at(-2);
+    if (prev && lastMACD && ((prev.MACD <= prev.signal && lastMACD.MACD > lastMACD.signal) || (prev.MACD >= prev.signal && lastMACD.MACD < lastMACD.signal))) {
+      momentumTrigger = true;
+      details.push('⚡ Croisement MACD détecté');
+    }
+  }
+  if (rsi.length >= 2 && Math.abs(rsi.at(-1) - rsi.at(-2)) > 5) {
+    momentumTrigger = true;
+    details.push(`⚡ Mouvement RSI (${rsi.at(-2).toFixed(1)} ➝ ${rsi.at(-1).toFixed(1)})`);
+  }
+  if (stoch.length >= 2 && Math.abs(lastStoch.k - stoch.at(-2).k) > 10) {
+    momentumTrigger = true;
+    details.push(`⚡ Accélération stochastique (${stoch.at(-2).k.toFixed(1)} ➝ ${lastStoch.k.toFixed(1)})`);
+  }
+
+  // Logique anti-répétition
   if (context?.lastSignal === signal && signal !== 'WAIT') {
     const prevPrice = global.latestSignal?.price || 0;
     const priceDiff = (price - prevPrice) * 10000 * (signal === 'BUY' ? 1 : -1);
-
-    const priceThreshold = 3; // seuil renforcé
+    const priceThreshold = 2;
     const indicatorsChanged =
       tags.some(t => !(context?.tags || []).includes(t)) ||
       (context?.tags || []).some(t => !tags.includes(t)) ||
       context?.tags?.length !== tags.length;
-
     if (!indicatorsChanged || priceDiff < priceThreshold) {
       signal = 'WAIT';
       confidence = 50;
       confidenceBear = 50;
-      details.push('⏸ Signal identique sans évolution significative — mis en attente.');
+      details.push('⏸ Signal identique sans évolution notable — mis en attente.');
     }
+  }
+
+  let commentaire = null;
+  if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
+    commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
+    details.push(commentaire);
   }
 
   return {
@@ -823,6 +859,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     }
   };
 }
+
 
 
 
