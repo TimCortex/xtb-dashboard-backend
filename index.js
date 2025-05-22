@@ -90,42 +90,61 @@ function saveSignalResults(results) {
   fs.writeFileSync(SIGNAL_RESULT_FILE, JSON.stringify(results, null, 2));
 }
 
+// ZenScalp - version enrichie avec boucle de suivi TP/SL asynchrone
+
 function scheduleSignalEvaluation(signalObj) {
   const id = Date.now();
   activeSignals.set(id, signalObj);
 
-  setTimeout(async () => {
+  const { direction, price: entryPrice, context } = signalObj;
+  const takeProfit = 5; // TP en pips
+  const stopLoss = 5;   // SL en pips
+
+  const checkInterval = 5000; // toutes les 5 secondes
+  const maxWaitTime = 5 * 60 * 1000; // 5 minutes max
+
+  const startTime = Date.now();
+
+  const interval = setInterval(async () => {
+    const currentTime = Date.now();
+    if (currentTime - startTime > maxWaitTime) {
+      clearInterval(interval);
+      activeSignals.delete(id);
+      console.log('⏹️ Évaluation expirée sans TP/SL atteint');
+      return;
+    }
+
     const latestPrice = await getCurrentPrice();
     if (!latestPrice) return;
 
-    const { direction, price: entryPrice, context } = signalObj;
     const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
     const roundedPips = +pips.toFixed(1);
 
-    const takeProfit = 1.5; // 🎯 TP à 5 pips
-    const stopLoss = 5;   // 🛑 SL à 5 pips
-
-    let outcome = 'neutral';
+    let outcome = null;
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
-    const result = {
-      timestamp: new Date().toISOString(),
-      direction,
-      entryPrice,
-      exitPrice: latestPrice,
-      pips: roundedPips,
-      outcome,
-      context
-    };
+    if (outcome) {
+      clearInterval(interval);
+      const result = {
+        timestamp: new Date().toISOString(),
+        direction,
+        entryPrice,
+        exitPrice: latestPrice,
+        pips: roundedPips,
+        outcome,
+        context
+      };
 
-    const existing = loadSignalResults();
-    existing.push(result);
-    saveSignalResults(existing);
+      const existing = loadSignalResults();
+      existing.push(result);
+      saveSignalResults(existing);
 
-    activeSignals.delete(id);
-  }, 60000);
+      activeSignals.delete(id);
+    }
+  }, checkInterval);
 }
+
 
 function loadSignalHistory() {
   try {
