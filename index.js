@@ -414,14 +414,21 @@ function generatePerformanceTable(data) {
 }
 
 function getSignalSummaryHTML() {
-  const data = loadSignalResults(); // ← utilise ton fichier signal_results.json
+  const data = loadSignalResults();
   const tagStats = {};
+
+  let successCount = 0;
+  let failCount = 0;
 
   for (const sig of data) {
     for (const tag of sig.context?.tags || []) {
       if (!tagStats[tag]) tagStats[tag] = { success: 0, fail: 0 };
-      sig.success ? tagStats[tag].success++ : tagStats[tag].fail++;
+      if (sig.outcome === 'success') tagStats[tag].success++;
+      else if (sig.outcome === 'fail') tagStats[tag].fail++;
     }
+
+    if (sig.outcome === 'success') successCount++;
+    else if (sig.outcome === 'fail') failCount++;
   }
 
   if (Object.keys(tagStats).length === 0) {
@@ -444,10 +451,37 @@ function getSignalSummaryHTML() {
   return `
     <div class="card">
       <h2>📊 Historique des tags & fiabilité</h2>
-      <table>
-        <tr><th>Tag</th><th>Succès</th><th>Échecs</th><th>Taux de réussite</th></tr>
-        ${rows.join('')}
-      </table>
+      <div style="display:flex; gap: 30px; align-items: center;">
+        <div style="flex: 1;">
+          <table>
+            <tr><th>Tag</th><th>Succès</th><th>Échecs</th><th>Taux de réussite</th></tr>
+            ${rows.join('')}
+          </table>
+        </div>
+        <div style="width: 200px;">
+          <canvas id="pieChart"></canvas>
+        </div>
+      </div>
+      <script>
+        setTimeout(() => {
+          const ctx = document.getElementById('pieChart').getContext('2d');
+          if (window.myChart) window.myChart.destroy();
+          window.myChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+              labels: ['Succès', 'Échecs'],
+              datasets: [{
+                data: [${successCount}, ${failCount}],
+                backgroundColor: ['#28a745', '#e74c3c'],
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: { legend: { position: 'bottom' } }
+            }
+          });
+        }, 100);
+      </script>
     </div>`;
 }
 
