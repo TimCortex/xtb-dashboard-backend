@@ -824,12 +824,14 @@ cron.schedule('*/30 * * * * *', async () => {
       };
     }
 
-
     const data5m = await fetchData(5);
     const data15m = await fetchData(15);
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
-    const analysis = generateVisualAnalysis(data5m, trend5, trend15);
+
+    const analysis = generateVisualAnalysis(data5m, trend5, trend15, {
+      lastSignal: global.latestSignal?.context?.lastSignal || null
+    });
 
     if (analysis.signal !== 'WAIT') {
       scheduleSignalEvaluation({
@@ -846,38 +848,38 @@ cron.schedule('*/30 * * * * *', async () => {
       });
     }
 
-
-    let msg = `_________________________
-`;
-    msg += `📈 ${analysis.signal}**
-`;
-    msg += `🪙 **Prix :** ${price.toFixed(5)}
-`;
-    msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%
-`;
-    msg += `🕒 **Tendance :** ${analysis.trend5}
-`;
-    if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}
-`;
+    let msg = `_________________________\n`;
+    msg += `📈 **Signal : ${analysis.signal}**\n`;
+    msg += `🪙 **Prix :** ${price.toFixed(5)}\n`;
+    msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%\n`;
+    msg += `🕒 **Tendance :** ${analysis.trend5}\n`;
+    if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}\n`;
     if (analysis.details && analysis.details.length) {
       msg += '\n🧾 **Détails analyse technique :**\n' + analysis.details.map(d => `• ${d}`).join('\n');
     }
+
     if (entryPrice && entryDirection) {
       msg += `\n⛳ **Entry :** ${entryPrice.toFixed(5)} (${entryDirection})`;
       msg += `\n📉 **Écart actuel :** ${Math.round((price - entryPrice) * 10000)} pips`;
     }
 
+    if (analysis.signal === 'WAIT' && analysis.details.some(d => d.includes('⏸ Signal répété'))) {
+      msg = `⏸ Pas de nouveau signal - aucune évolution significative depuis le dernier signal.\n\n` + msg;
+    }
 
     await sendToDiscord(msg);
+
     global.latestSignal = {
       message: msg,
-      date: new Date()
+      date: new Date(),
+      context: analysis.context
     };
 
   } catch (e) {
     console.error('Erreur visuelle:', e.message);
   }
 });
+
 
 // Ajout GET /clear-entry pour test navigateur
 app.get('/clear-entry', (req, res) => {
