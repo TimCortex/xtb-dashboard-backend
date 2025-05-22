@@ -262,7 +262,7 @@ async function fetchLatestIGPosition() {
       }
     });
 
-    const pos = res.data.positions.find(p => p.market.epic === IG_ACCOUNT_ID);
+    const pos = res.data.positions.find(p => p.market.epic === 'CS.D.EURUSD.MINI.IP');
     if (!pos) return null;
 
     const direction = pos.position.direction;
