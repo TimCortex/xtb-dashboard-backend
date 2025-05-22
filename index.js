@@ -100,13 +100,22 @@ function scheduleSignalEvaluation(signalObj) {
 
     const { direction, price: entryPrice, context } = signalObj;
     const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+    const roundedPips = +pips.toFixed(1);
+
+    const takeProfit = 1.5; // 🎯 TP à 5 pips
+    const stopLoss = 5;   // 🛑 SL à 5 pips
+
+    let outcome = 'neutral';
+    if (roundedPips >= takeProfit) outcome = 'success';
+    else if (roundedPips <= -stopLoss) outcome = 'fail';
+
     const result = {
       timestamp: new Date().toISOString(),
       direction,
       entryPrice,
       exitPrice: latestPrice,
-      pips: +pips.toFixed(1),
-      success: pips >= 1,
+      pips: roundedPips,
+      outcome,
       context
     };
 
