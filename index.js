@@ -134,11 +134,12 @@ function scheduleSignalEvaluation(signalObj) {
   activeSignals.set(id, signalObj);
 
   const { direction, price: entryPrice, context } = signalObj;
-  const takeProfit = 1.5;
-  const stopLoss = 5;
+  const takeProfit = 1.5; // en pips
+  const stopLoss = 5;     // en pips
+
+  const checkInterval = 15000; // toutes les 15 secondes
+  const maxWaitTime = 5 * 60 * 1000; // max 5 minutes
   const startTime = Date.now();
-  const maxWaitTime = 5 * 60 * 1000;
-  const checkInterval = 5000;
 
   const interval = setInterval(async () => {
     const now = Date.now();
@@ -149,35 +150,44 @@ function scheduleSignalEvaluation(signalObj) {
       return;
     }
 
-    const hit = await wasTpOrSlHit({ entryPrice, direction, startTime, takeProfit, stopLoss });
-    if (!hit) return;
-
-    clearInterval(interval);
-    const { outcome, exitPrice } = hit;
-
-    const result = {
-      timestamp: new Date().toISOString(),
-      direction,
+    const result = await wasTpOrSlHit({
       entryPrice,
-      exitPrice,
-      pips: ((exitPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
-      outcome,
-      context
-    };
+      direction,
+      startTime,
+      takeProfit,
+      stopLoss
+    });
 
-    const existing = loadSignalResults();
-    existing.push(result);
-    saveSignalResults(existing);
-    activeSignals.delete(id);
+    if (result) {
+      clearInterval(interval);
+      const full = {
+        timestamp: new Date().toISOString(),
+        direction,
+        entryPrice,
+        exitPrice: result.exitPrice,
+        pips: ((result.exitPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
+        outcome: result.outcome,
+        context
+      };
+
+      const existing = loadSignalResults();
+      existing.push(full);
+      saveSignalResults(existing);
+      activeSignals.delete(id);
+
+      console.log(`✅ Signal ${direction} terminé par ${result.outcome} à ${result.exitPrice.toFixed(5)} (${full.pips} pips)`);
+    }
   }, checkInterval);
 }
+
 
 async function wasTpOrSlHit({ entryPrice, direction, startTime, takeProfit, stopLoss }) {
   try {
     const now = new Date();
-    const from = new Date(startTime);
-    const fromStr = from.toISOString();
-    const toStr = now.toISOString();
+    const fromDate = new Date(startTime);
+    
+    const fromStr = fromDate.toISOString().split('T')[0]; // "2025-05-22"
+    const toStr = now.toISOString().split('T')[0];
 
     const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/1/minute/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=500&apiKey=${POLYGON_API_KEY}`;
     const res = await axios.get(url);
@@ -197,10 +207,11 @@ async function wasTpOrSlHit({ entryPrice, direction, startTime, takeProfit, stop
     }
     return null;
   } catch (e) {
-    console.error('Erreur TP/SL bougies M1:', e.message);
+    console.error('❌ Erreur TP/SL bougies M1:', e.message);
     return null;
   }
 }
+
 
 function saveSignalResults(results) {
   fs.writeFileSync(SIGNAL_RESULT_FILE, JSON.stringify(results, null, 2));
