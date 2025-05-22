@@ -584,7 +584,8 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const lastIchi = ichimoku.at(-1);
   const lastATR = atr.at(-1);
 
-  // EMA
+  // === Analyse technique complète ===
+
   if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) {
     tags.push('EMA haussière');
     details.push('✅ EMA50 > EMA100');
@@ -593,7 +594,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ EMA50 < EMA100');
   }
 
-  // RSI
   if (rsi.at(-1) > 50) {
     tags.push('RSI>50');
     details.push('✅ RSI > 50');
@@ -602,7 +602,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ RSI < 50');
   }
 
-  // MACD
   if (lastMACD && lastMACD.MACD > lastMACD.signal) {
     tags.push('MACD haussier');
     details.push('✅ MACD haussier');
@@ -611,7 +610,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ MACD baissier');
   }
 
-  // Stochastique
   if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) {
     tags.push('Stoch haussier');
     details.push('✅ Stochastique haussier');
@@ -620,7 +618,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Stochastique baissier');
   }
 
-  // Ichimoku
   if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
     tags.push('Ichimoku breakout');
     details.push('✅ Ichimoku breakout');
@@ -629,7 +626,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Ichimoku breakdown');
   }
 
-  // Tendance externe M5 / M15
   if (trend5 === 'HAUSSIÈRE') {
     tags.push('Trend M5 haussier');
     details.push('✅ Tendance M5 haussière');
@@ -645,7 +641,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Tendance M15 baissière');
   }
 
-  // Pattern
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
   if (pattern === '🟩 Avalement haussier') {
@@ -656,7 +651,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Pattern : Avalement baissier');
   }
 
-  // ATR - Volatilité
   if (lastATR) {
     const atrPips = lastATR * 10000;
     if (lastATR < 0.0004) {
@@ -671,13 +665,14 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     }
   }
 
-  // Score adaptatif basé sur les tags
+  // === Score & confiance adaptative ===
   const adaptiveScore = applyWeights(tags);
-  const signal = adaptiveScore >= 2 ? 'BUY' : adaptiveScore <= -2 ? 'SELL' : 'WAIT';
-  const confidence = Math.min(100, Math.max(0, adaptiveScore * 25 + 50));
-  const confidenceBear = 100 - confidence;
+  const cappedScore = Math.max(-4, Math.min(4, adaptiveScore));
+  const confidence = +(50 + cappedScore * 12.5).toFixed(1);
+  const confidenceBear = +(100 - confidence).toFixed(1);
 
-  // Contradiction pattern/signal
+  const signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
+
   let commentaire = null;
   if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
     commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
@@ -687,8 +682,8 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   return {
     price,
     signal,
-    confidence: +confidence.toFixed(1),
-    confidenceBear: +confidenceBear.toFixed(1),
+    confidence,
+    confidenceBear,
     pattern,
     trend5,
     trend15,
@@ -698,6 +693,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     context: { tags }
   };
 }
+
 
 
 
