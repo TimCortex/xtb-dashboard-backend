@@ -582,7 +582,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const lastMACD = macd.at(-1);
   const lastStoch = stoch.at(-1);
   const lastIchi = ichimoku.at(-1);
-  const lastATR = atr.at(-1);
+  const lastATR = atr.at(-1) ?? 0.001;
 
   // === Analyse technique complète ===
 
@@ -633,6 +633,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     tags.push('Trend M5 baissier');
     details.push('❌ Tendance M5 baissière');
   }
+
   if (trend15 === 'HAUSSIÈRE') {
     tags.push('Trend M15 haussier');
     details.push('✅ Tendance M15 haussière');
@@ -651,26 +652,61 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Pattern : Avalement baissier');
   }
 
-  if (lastATR) {
-    const atrPips = lastATR * 10000;
-    if (lastATR < 0.0004) {
-      tags.push('Volatilité faible');
-      details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips)`);
-    } else if (lastATR > 0.0015) {
-      tags.push('Volatilité élevée');
-      details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips)`);
-    } else {
-      tags.push('Volatilité idéale');
-      details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips)`);
+  // Volatilité
+  const atrPips = lastATR * 10000;
+  if (lastATR < 0.0004) {
+    tags.push('Volatilité faible');
+    details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips)`);
+  } else if (lastATR > 0.0015) {
+    tags.push('Volatilité élevée');
+    details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips)`);
+  } else {
+    tags.push('Volatilité idéale');
+    details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips)`);
+  }
+
+  // Détection support/résistance + proximité
+  const { lastHigh, lastLow, supportStrength, resistanceStrength } = detectSupportResistanceStrength(data);
+  const distanceToResistance = Math.abs(price - lastHigh);
+  const distanceToSupport = Math.abs(price - lastLow);
+
+  if (distanceToResistance <= lastATR * 0.5) {
+    tags.push('Proche résistance');
+    details.push(`⚠️ Prix proche d’une résistance (à ${Math.round(distanceToResistance * 10000)} pips)`);
+    if (resistanceStrength >= 2) {
+      tags.push('Résistance forte');
+      details.push(`🔴 Résistance détectée (force ${resistanceStrength}/3)`);
     }
   }
 
-  // === Score & confiance adaptative ===
-  const adaptiveScore = applyWeights(tags);
+  if (distanceToSupport <= lastATR * 0.5) {
+    tags.push('Proche support');
+    details.push(`⚠️ Prix proche d’un support (à ${Math.round(distanceToSupport * 10000)} pips)`);
+    if (supportStrength >= 2) {
+      tags.push('Support fort');
+      details.push(`🟢 Support détecté (force ${supportStrength}/3)`);
+    }
+  }
+
+  // Score adaptatif + influence S/R intelligente
+  let adaptiveScore = applyWeights(tags);
+  let proximityBonus = 0;
+
+  if (distanceToSupport <= lastATR * 0.5) {
+    if (supportStrength >= 2 && adaptiveScore >= 0) proximityBonus += supportStrength * 0.5;
+    if (supportStrength >= 2 && adaptiveScore < 0) proximityBonus -= supportStrength * 0.5;
+  }
+
+  if (distanceToResistance <= lastATR * 0.5) {
+    if (resistanceStrength >= 2 && adaptiveScore <= 0) proximityBonus += resistanceStrength * 0.5;
+    if (resistanceStrength >= 2 && adaptiveScore > 0) proximityBonus -= resistanceStrength * 0.5;
+  }
+
+  adaptiveScore += proximityBonus;
+
   const cappedScore = Math.max(-4, Math.min(4, adaptiveScore));
   const confidence = +(50 + cappedScore * 12.5).toFixed(1);
   const confidenceBear = +(100 - confidence).toFixed(1);
-
   const signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
 
   let commentaire = null;
@@ -693,6 +729,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     context: { tags }
   };
 }
+
 
 
 
