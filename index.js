@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const bodyParser = require('body-parser');
 const SIGNAL_LOG_PATH = './signal_history.json';
+const SIGNAL_RESULT_FILE = path.resolve('signal_results.json');
+const activeSignals = new Map(); // Map temporaire en RAM
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -37,6 +39,85 @@ let isPaused = false;
 let lastPauseMessage = null;
 
 //
+
+function loadSignalResults() {
+  try {
+    if (!fs.existsSync(SIGNAL_RESULT_FILE)) fs.writeFileSync(SIGNAL_RESULT_FILE, '[]');
+    return JSON.parse(fs.readFileSync(SIGNAL_RESULT_FILE));
+  } catch {
+    return [];
+  }
+}
+
+function getAdaptiveWeights() {
+  const all = loadSignalResults();
+  const scoreMap = {};
+  const counts = {};
+
+  for (const sig of all) {
+    for (const tag of sig.context?.tags || []) {
+      if (!counts[tag]) counts[tag] = { success: 0, fail: 0 };
+      sig.success ? counts[tag].success++ : counts[tag].fail++;
+    }
+  }
+
+  for (const tag in counts) {
+    const total = counts[tag].success + counts[tag].fail;
+    const rate = total > 0 ? counts[tag].success / total : 0.5;
+    scoreMap[tag] = +(rate * 1.2 - 0.3).toFixed(2);
+  }
+
+  return scoreMap;
+}
+
+function applyWeights(tags, defaultScore = 0.4) {
+  const weights = getAdaptiveWeights();
+  return tags.reduce((sum, tag) => sum + (weights[tag] ?? defaultScore), 0);
+}
+
+// Exemple d'intégration dans une analyse future :
+function exampleAdaptiveAnalysis() {
+  const tags = [
+    'RSI>50',
+    'MACD haussier',
+    'Stochastique haussier'
+  ];
+  const finalScore = applyWeights(tags);
+  console.log('Score adaptatif:', finalScore);
+}
+
+function saveSignalResults(results) {
+  fs.writeFileSync(SIGNAL_RESULT_FILE, JSON.stringify(results, null, 2));
+}
+
+function scheduleSignalEvaluation(signalObj) {
+  const id = Date.now();
+  activeSignals.set(id, signalObj);
+
+  setTimeout(async () => {
+    const latestPrice = await getCurrentPrice();
+    if (!latestPrice) return;
+
+    const { direction, price: entryPrice, context } = signalObj;
+    const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+    const result = {
+      timestamp: new Date().toISOString(),
+      direction,
+      entryPrice,
+      exitPrice: latestPrice,
+      pips: +pips.toFixed(1),
+      success: pips >= 1,
+      context
+    };
+
+    const existing = loadSignalResults();
+    existing.push(result);
+    saveSignalResults(existing);
+
+    activeSignals.delete(id);
+  }, 60000);
+}
+
 function loadSignalHistory() {
   try {
     return JSON.parse(fs.readFileSync(SIGNAL_LOG_PATH, 'utf-8'));
@@ -424,13 +505,11 @@ function analyzeTrendM5M15(data5m, data15m) {
 
 
 
-
-
-// ZenScalp - version visuelle enrichie avec scoring pondéré réaliste + Ichimoku & prox res/sup
+// ZenScalp - version enrichie avec scoring adaptatif intelligent
 
 function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'INDÉTERMINÉE') {
-
-   data = data.filter(c => c && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number' && typeof c.o === 'number');
+  data = data.filter(c => c && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number' && typeof c.o === 'number');
+  const tags = [];
 
   if (data.length < 50) {
     console.error('❌ Données insuffisantes pour analyse technique.');
@@ -442,10 +521,12 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
       pattern: null,
       trend5,
       trend15,
+      tags,
       details: ['❌ Analyse impossible - bougies invalides ou incomplètes.'],
       commentaire: 'Erreur de données.'
     };
   }
+
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -460,46 +541,50 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
 
   let bull = 0, bear = 0, details = [];
 
-  // Ajouter les données d'entrée globales
-  if (typeof global.entryTime === 'undefined') global.entryTime = null;
-
   // EMA
   if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) {
     bull += 0.8;
+    tags.push('EMA haussière');
     details.push('✅ EMA50 > EMA100 (+0.8)');
   } else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) {
     bear += 0.8;
+    tags.push('EMA baissière');
     details.push('❌ EMA50 < EMA100 (+0.8 bear)');
   }
 
   // RSI
   if (rsi.at(-1) > 50) {
     bull += 0.6;
+    tags.push('RSI>50');
     details.push('✅ RSI > 50 (+0.6)');
   } else {
     bear += 0.6;
+    tags.push('RSI<50');
     details.push('❌ RSI < 50 (+0.6 bear)');
   }
 
   // Tendance combinée M5 / M15
   if (trend5 === 'HAUSSIÈRE') {
     bull += 0.6;
+    tags.push('Trend M5 haussier');
     details.push('✅ Tendance M5 haussière (+0.6)');
   } else if (trend5 === 'BAISSIÈRE') {
     bear += 0.6;
+    tags.push('Trend M5 baissier');
     details.push('❌ Tendance M5 baissière (+0.6 bear)');
   }
 
   if (trend15 === 'HAUSSIÈRE') {
     bull += 0.4;
+    tags.push('Trend M15 haussier');
     details.push('✅ Tendance M15 haussière (+0.4)');
   } else if (trend15 === 'BAISSIÈRE') {
     bear += 0.4;
+    tags.push('Trend M15 baissier');
     details.push('❌ Tendance M15 baissière (+0.4 bear)');
   }
 
-  if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') ||
-      (trend5 === 'BAISSIÈRE' && trend15 === 'HAUSSIÈRE')) {
+  if ((trend5 === 'HAUSSIÈRE' && trend15 === 'BAISSIÈRE') || (trend5 === 'BAISSIÈRE' && trend15 === 'HAUSSIÈRE')) {
     details.push('⚠️ Contradiction entre tendance M5 et M15');
   }
 
@@ -507,9 +592,11 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const lastMACD = macd.at(-1);
   if (lastMACD && lastMACD.MACD > lastMACD.signal) {
     bull += 0.6;
+    tags.push('MACD haussier');
     details.push('✅ MACD haussier (+0.6)');
   } else if (lastMACD) {
     bear += 0.6;
+    tags.push('MACD baissier');
     details.push('❌ MACD baissier (+0.6 bear)');
   }
 
@@ -517,188 +604,61 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const lastStoch = stoch.at(-1);
   if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) {
     bull += 0.4;
+    tags.push('Stoch haussier');
     details.push('✅ Stochastique haussier (+0.4)');
   } else if (lastStoch && lastStoch.k < lastStoch.d && lastStoch.k > 20) {
     bear += 0.4;
+    tags.push('Stoch baissier');
     details.push('❌ Stochastique baissier (+0.4 bear)');
   }
 
-  // Ichimoku breakout
+  // Ichimoku
   const lastIchi = ichimoku.at(-1);
   if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
     bull += 0.7;
+    tags.push('Ichimoku breakout');
     details.push('✅ Ichimoku breakout (+0.7)');
   } else if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) {
     bear += 0.7;
+    tags.push('Ichimoku breakdown');
     details.push('❌ Ichimoku breakdown (+0.7 bear)');
   }
 
-  // Proximité res/sup
-  const { lastHigh, lastLow, supportStrength, resistanceStrength } = detectSupportResistanceStrength(data);
+  // Range
+  const rangeAmplitude = Math.max(...high.slice(-6)) - Math.min(...low.slice(-6));
+  if (rangeAmplitude < 0.0008) {
+    tags.push('Range étroit');
+    details.push(`⚠️ Range étroit (${(rangeAmplitude * 10000).toFixed(1)} pips)`);
+  }
 
-const pipDistance = 0.0006;
-if (price > lastHigh - pipDistance) {
-  const penalty = 0.2 * resistanceStrength;
-  bull -= penalty;
-  bear += penalty / 2;
-  details.push(`⚠️ Proximité résistance (force ${resistanceStrength}) : -${penalty.toFixed(2)} bull`);
-}
-
-if (price < lastLow + pipDistance) {
-  const penalty = 0.2 * supportStrength;
-  bear -= penalty;
-  bull += penalty / 2;
-  details.push(`⚠️ Proximité support (force ${supportStrength}) : -${penalty.toFixed(2)} bear`);
-}
-
-  // Détection d'un range étroit sur les 6 dernières bougies
-const recentCloses = close.slice(-6);
-const recentHighs = high.slice(-6);
-const recentLows = low.slice(-6);
-const rangeMax = Math.max(...recentHighs);
-const rangeMin = Math.min(...recentLows);
-const rangeAmplitude = rangeMax - rangeMin;
-
-
- let totalScore = bull + bear;
-let confidence = totalScore > 0 ? (bull / totalScore) * 100 : 0;
-let confidenceBear = totalScore > 0 ? (bear / totalScore) * 100 : 0;
-
-  // Si range très étroit (< 0.0006 = 6 pips), on neutralise fortement
-if (rangeAmplitude < 0.0008) {
-  details.push(`⚠️ Marché en range étroit (${(rangeAmplitude * 10000).toFixed(1)} pips sur 6 bougies) → neutralisation du signal`);
-  confidence *= 0.5;
-  confidenceBear *= 0.5;
-}
-
-  const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
+  // Pattern
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
-
-  // Patterns
   if (pattern === '🟩 Avalement haussier') {
     bull += 0.7;
+    tags.push('Pattern haussier');
     details.push('✅ Pattern : Avalement haussier (+0.7)');
   } else if (pattern === '🟥 Avalement baissier') {
     bear += 0.7;
+    tags.push('Pattern baissier');
     details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
-  } else if (pattern === '🟩 Trois soldats blancs') {
-    bull += 0.6;
-    details.push('✅ Pattern : Trois soldats blancs (+0.6)');
-  } else if (pattern === '🟥 Trois corbeaux noirs') {
-    bear += 0.6;
-    details.push('❌ Pattern : Trois corbeaux noirs (+0.6 bear)');
   }
 
-  let commentaire = null;
-  if ((signal === 'BUY' && pattern && pattern.includes('🟥')) || (signal === 'SELL' && pattern && pattern.includes('🟩'))) {
-    commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
-    details.push(commentaire);
-  }
-
-  // Sentiment marché
-  const sentiment = (() => {
-  const candles = data.slice(-24);
-  let altCount = 0, dojiCount = 0, prev = null;
-
-  for (let c of candles) {
-    const body = Math.abs(c.c - c.o);
-    const dir = c.c > c.o ? 'bull' : c.c < c.o ? 'bear' : 'doji';
-    if (body < (c.h - c.l) * 0.2) dojiCount++;
-    if (prev && dir !== prev) altCount++;
-    if (dir !== 'doji') prev = dir;
-  }
-
-  let score = 0;
-
-  // ➤ Seuillage plus permissif
-  const altRatio = altCount / candles.length;
-  const dojiRatio = dojiCount / candles.length;
-
-  if (altRatio > 0.6) score -= 0.3;           // moins sévère qu'avant
-  if (dojiRatio > 0.4) score -= 0.2;          // dojis tolérés jusqu’à 40%
-  if (Math.abs(ema50.at(-1) - ema100.at(-1)) < 0.00025) score -= 0.2;
-  if (trend15 === 'INDÉTERMINÉE') score -= 0.2; // avant c’était -0.4
-
-  return Math.max(-1, Math.min(1, score));
-})();
-
-
-  // Proximité technique
-  let generalWarning = '';
-  let safeDistanceBonus = true;
-  if (lastIchi && price > lastIchi.spanA && price < lastIchi.spanB) {
-    generalWarning = '⚠️ Le prix est dans ou proche du nuage Ichimoku.';
-    safeDistanceBonus = false;
-  } if (price > lastHigh - pipDistance) {
-  generalWarning = `⚠️ Le prix est proche d’une résistance (${lastHigh.toFixed(5)}).`;
-  safeDistanceBonus = false;
-} else if (price < lastLow + pipDistance) {
-  generalWarning = `⚠️ Le prix est proche d’un support (${lastLow.toFixed(5)}).`;
-  safeDistanceBonus = false;
-}
-
-  if (generalWarning) details.push(generalWarning);
-  if (!safeDistanceBonus) {
-    confidence -= 0.3;
-    confidenceBear -= 0.3;
-  } else {
-    confidence += 0.3;
-    confidenceBear += 0.3;
-    details.push('✅ Aucun obstacle technique proche → léger bonus de confiance.');
-  }
-
-  confidence = Math.min(confidence, 95);
-  confidenceBear = Math.min(confidenceBear, 95);
-
-  if (commentaire) details.push(commentaire);
-
- // Logique de sortie intelligente complète
-if (global.entryPrice !== null && global.entryDirection && global.entryTime) {
-  const elapsed = (Date.now() - global.entryTime) / 1000; // secondes
-  const pips = Math.round((price - global.entryPrice) * 10000 * (global.entryDirection === 'BUY' ? 1 : -1));
-  const tolerance = 3;
-
-  const signalAligned = signal === global.entryDirection;
-  const trendOk = (global.entryDirection === 'BUY' && trend5 === 'HAUSSIÈRE') ||
-                  (global.entryDirection === 'SELL' && trend5 === 'BAISSIÈRE');
-
-  let recommandation = '';
-  let raisons = [];
-
-  if (elapsed < 360) {
-    recommandation = '🟡 Attente - position trop récente (<3min)';
-    raisons.push('⏳ Moins de 3 minutes écoulées');
-  } else if (pips < -tolerance) {
-    if (!signalAligned) raisons.push(`❌ Signal actuel : ${signal} ≠ position ${global.entryDirection}`);
-    if (!trendOk) raisons.push(`❌ Tendance M15 : ${trend15}, non favorable`);
-    if (confidence < 65) raisons.push(`❌ Confiance trop faible : ${confidence.toFixed(1)}%`);
-
-    if (raisons.length > 0) {
-      recommandation = `🔴 Sortie recommandée - perte de ${Math.abs(pips)} pips`;
-    } else {
-      recommandation = `🟢 Attente - contexte global encore favorable malgré ${Math.abs(pips)} pips de perte`;
-    }
-  } else {
-    recommandation = `🟢 Position encore valide - gain ou perte contenue (${pips} pips)`;
-  }
-
-  details.push('✅ Recommandation :\n' + recommandation);
-  if (raisons.length) details.push('🧠 Raisons :\n' + raisons.join('\n'));
-}
-
-
+  // Calcul du score adaptatif global
+  const adaptiveScore = applyWeights(tags);
+  const signal = adaptiveScore >= 2.0 ? 'BUY' : adaptiveScore <= -2.0 ? 'SELL' : 'WAIT';
 
   return {
     price,
     signal,
-    confidence,
-    confidenceBear,
+    confidence: null,
+    confidenceBear: null,
     pattern,
     trend5,
     trend15,
+    tags,
     details,
-    commentaire
+    commentaire: null
   };
 }
 
@@ -836,6 +796,23 @@ const data15m = await fetchData(15);
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
+
+    if (analysis.signal !== 'WAIT') {
+  scheduleSignalEvaluation({
+    direction: analysis.signal,
+    price,
+    context: {
+      ema50: ema50.at(-1),
+      ema100: ema100.at(-1),
+      rsi: rsi.at(-1),
+      macd: macd.at(-1),
+      stoch: stoch.at(-1),
+      ichimoku: ichimoku.at(-1),
+      trend5,
+      trend15
+    }
+  });
+}
 
     let msg = `_________________________
 `;
