@@ -671,6 +671,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     tags
   };
 }
+}
 
 function getISODateNDaysAgo(n) {
   const d = new Date();
