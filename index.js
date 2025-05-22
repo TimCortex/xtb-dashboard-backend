@@ -135,10 +135,11 @@ function scheduleSignalEvaluation(signalObj) {
 
   const { direction, price: entryPrice, context } = signalObj;
   const takeProfit = 1.5; // en pips
-  const stopLoss = 5;     // en pips
+  const stopLoss = 5.0;   // en pips
 
-  const checkInterval = 15000; // toutes les 15 secondes
-  const maxWaitTime = 5 * 60 * 1000; // max 5 minutes
+  const checkInterval = 5000; // 5 secondes
+  const maxWaitTime = 5 * 60 * 1000; // 5 minutes
+
   const startTime = Date.now();
 
   const interval = setInterval(async () => {
@@ -150,35 +151,37 @@ function scheduleSignalEvaluation(signalObj) {
       return;
     }
 
-    const result = await wasTpOrSlHit({
-      entryPrice,
-      direction,
-      startTime,
-      takeProfit,
-      stopLoss
-    });
+    const current = await getCurrentPrice();
+    if (!current) return;
 
-    if (result) {
+    const pips = (current - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+    const roundedPips = +pips.toFixed(1);
+
+    let outcome = null;
+    if (roundedPips >= takeProfit) outcome = 'success';
+    else if (roundedPips <= -stopLoss) outcome = 'fail';
+
+    if (outcome) {
       clearInterval(interval);
-      const full = {
+      const result = {
         timestamp: new Date().toISOString(),
         direction,
         entryPrice,
-        exitPrice: result.exitPrice,
-        pips: ((result.exitPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
-        outcome: result.outcome,
+        exitPrice: current,
+        pips: roundedPips,
+        outcome,
         context
       };
 
       const existing = loadSignalResults();
-      existing.push(full);
+      existing.push(result);
       saveSignalResults(existing);
-      activeSignals.delete(id);
 
-      console.log(`✅ Signal ${direction} terminé par ${result.outcome} à ${result.exitPrice.toFixed(5)} (${full.pips} pips)`);
+      activeSignals.delete(id);
     }
   }, checkInterval);
 }
+
 
 
 async function wasTpOrSlHit({ entryPrice, direction, startTime, takeProfit, stopLoss }) {
