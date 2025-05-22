@@ -1025,6 +1025,7 @@ app.get('/dashboard', async (req, res) => {
     <html>
     <head>
       <title>ZenScalp Dashboard</title>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
       <style>
         body {
           font-family: 'Segoe UI', sans-serif;
