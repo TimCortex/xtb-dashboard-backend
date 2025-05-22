@@ -628,24 +628,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
   }
 
- ChatGPT a dit :
-Oui, tu as tout à fait raison. Le bug vient du fait que le signal est maintenant basé uniquement sur le adaptiveScore, alors que le confidence est dérivé de ce score sans réelle logique de validation.
-
-🎯 Ce qu’on veut :
-Le signal doit être :
-
-'BUY' si le score est positif et la confiance ≥ 60%
-
-'SELL' si le score est négatif et la confiance ≥ 60%
-
-'WAIT' dans tous les autres cas
-
-✅ Solution corrigée :
-Modifie la fin de ta fonction generateVisualAnalysis ainsi :
-
-js
-Copier
-Modifier
 // Score adaptatif
 const adaptiveScore = applyWeights(tags);
 let direction = adaptiveScore > 0 ? 'BUY' : adaptiveScore < 0 ? 'SELL' : 'WAIT';
@@ -674,6 +656,7 @@ return {
   details,
   commentaire: null
 };
+
 }
 
 
