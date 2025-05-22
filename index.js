@@ -669,8 +669,8 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     trend5,
     trend15,
     tags
-  };
-}
+  }
+};
 }
 
 function getISODateNDaysAgo(n) {
