@@ -871,8 +871,16 @@ const data15m = await fetchData(15);
   scheduleSignalEvaluation({
     direction: analysis.signal,
     price,
-    context: analysis.context
+    context: {
+      tags: analysis.tags,
+      confidence: analysis.confidence,
+      confidenceBear: analysis.confidenceBear,
+      pattern: analysis.pattern,
+      trend5: analysis.trend5,
+      trend15: analysis.trend15
+    }
   });
+}
 }
 
     let msg = `_________________________
