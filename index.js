@@ -539,47 +539,39 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 5, signalPeriod: 3 });
   const ichimoku = technicalIndicators.IchimokuCloud.calculate({ high, low, conversionPeriod: 9, basePeriod: 26, spanPeriod: 52, displacement: 26 });
 
-  let bull = 0, bear = 0, details = [];
+  let details = [];
 
   // EMA
   if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) {
-    bull += 0.8;
     tags.push('EMA haussière');
     details.push('✅ EMA50 > EMA100 (+0.8)');
   } else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) {
-    bear += 0.8;
     tags.push('EMA baissière');
     details.push('❌ EMA50 < EMA100 (+0.8 bear)');
   }
 
   // RSI
   if (rsi.at(-1) > 50) {
-    bull += 0.6;
     tags.push('RSI>50');
     details.push('✅ RSI > 50 (+0.6)');
   } else {
-    bear += 0.6;
     tags.push('RSI<50');
     details.push('❌ RSI < 50 (+0.6 bear)');
   }
 
   // Tendance combinée M5 / M15
   if (trend5 === 'HAUSSIÈRE') {
-    bull += 0.6;
     tags.push('Trend M5 haussier');
     details.push('✅ Tendance M5 haussière (+0.6)');
   } else if (trend5 === 'BAISSIÈRE') {
-    bear += 0.6;
     tags.push('Trend M5 baissier');
     details.push('❌ Tendance M5 baissière (+0.6 bear)');
   }
 
   if (trend15 === 'HAUSSIÈRE') {
-    bull += 0.4;
     tags.push('Trend M15 haussier');
     details.push('✅ Tendance M15 haussière (+0.4)');
   } else if (trend15 === 'BAISSIÈRE') {
-    bear += 0.4;
     tags.push('Trend M15 baissier');
     details.push('❌ Tendance M15 baissière (+0.4 bear)');
   }
@@ -591,11 +583,9 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   // MACD
   const lastMACD = macd.at(-1);
   if (lastMACD && lastMACD.MACD > lastMACD.signal) {
-    bull += 0.6;
     tags.push('MACD haussier');
     details.push('✅ MACD haussier (+0.6)');
   } else if (lastMACD) {
-    bear += 0.6;
     tags.push('MACD baissier');
     details.push('❌ MACD baissier (+0.6 bear)');
   }
@@ -603,11 +593,9 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   // Stochastique
   const lastStoch = stoch.at(-1);
   if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) {
-    bull += 0.4;
     tags.push('Stoch haussier');
     details.push('✅ Stochastique haussier (+0.4)');
   } else if (lastStoch && lastStoch.k < lastStoch.d && lastStoch.k > 20) {
-    bear += 0.4;
     tags.push('Stoch baissier');
     details.push('❌ Stochastique baissier (+0.4 bear)');
   }
@@ -615,16 +603,14 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   // Ichimoku
   const lastIchi = ichimoku.at(-1);
   if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
-    bull += 0.7;
     tags.push('Ichimoku breakout');
     details.push('✅ Ichimoku breakout (+0.7)');
   } else if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) {
-    bear += 0.7;
     tags.push('Ichimoku breakdown');
     details.push('❌ Ichimoku breakdown (+0.7 bear)');
   }
 
-  // Range
+  // Range étroit
   const rangeAmplitude = Math.max(...high.slice(-6)) - Math.min(...low.slice(-6));
   if (rangeAmplitude < 0.0008) {
     tags.push('Range étroit');
@@ -635,45 +621,35 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
   if (pattern === '🟩 Avalement haussier') {
-    bull += 0.7;
     tags.push('Pattern haussier');
     details.push('✅ Pattern : Avalement haussier (+0.7)');
   } else if (pattern === '🟥 Avalement baissier') {
-    bear += 0.7;
     tags.push('Pattern baissier');
     details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
   }
 
-  // Calcul du score adaptatif global
+  // Score adaptatif
   const adaptiveScore = applyWeights(tags);
   const signal = adaptiveScore >= 2.0 ? 'BUY' : adaptiveScore <= -2.0 ? 'SELL' : 'WAIT';
-  const { confidence, confidenceBear } = calculateConfidence(bull, bear);
 
+  // Confiance dérivée du score adaptatif
+  let confidence = Math.min(Math.abs(adaptiveScore) * 25, 95); // 4 → 100%, plafonné à 95%
+  let confidenceBear = signal === 'SELL' ? confidence : 100 - confidence;
 
   return {
-  price,
-  signal,
-  confidence,
-  confidenceBear,
-  pattern,
-  trend5,
-  trend15,
-  tags,
-  details,
-  commentaire: null,
-  context: {
-    ema50: ema50.at(-1),
-    ema100: ema100.at(-1),
-    rsi: rsi.at(-1),
-    macd: macd.at(-1),
-    stoch: stoch.at(-1),
-    ichimoku: ichimoku.at(-1),
+    price,
+    signal,
+    confidence,
+    confidenceBear,
+    pattern,
     trend5,
     trend15,
-    tags
-  }
-};
+    tags,
+    details,
+    commentaire: null
+  };
 }
+
 
 function getISODateNDaysAgo(n) {
   const d = new Date();
