@@ -628,26 +628,52 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
   }
 
-  // Score adaptatif
-  const adaptiveScore = applyWeights(tags);
-  const signal = adaptiveScore >= 2.0 ? 'BUY' : adaptiveScore <= -2.0 ? 'SELL' : 'WAIT';
+ ChatGPT a dit :
+Oui, tu as tout à fait raison. Le bug vient du fait que le signal est maintenant basé uniquement sur le adaptiveScore, alors que le confidence est dérivé de ce score sans réelle logique de validation.
 
-  // Confiance dérivée du score adaptatif
-  let confidence = Math.min(Math.abs(adaptiveScore) * 25, 95); // 4 → 100%, plafonné à 95%
-  let confidenceBear = signal === 'SELL' ? confidence : 100 - confidence;
+🎯 Ce qu’on veut :
+Le signal doit être :
 
-  return {
-    price,
-    signal,
-    confidence,
-    confidenceBear,
-    pattern,
-    trend5,
-    trend15,
-    tags,
-    details,
-    commentaire: null
-  };
+'BUY' si le score est positif et la confiance ≥ 60%
+
+'SELL' si le score est négatif et la confiance ≥ 60%
+
+'WAIT' dans tous les autres cas
+
+✅ Solution corrigée :
+Modifie la fin de ta fonction generateVisualAnalysis ainsi :
+
+js
+Copier
+Modifier
+// Score adaptatif
+const adaptiveScore = applyWeights(tags);
+let direction = adaptiveScore > 0 ? 'BUY' : adaptiveScore < 0 ? 'SELL' : 'WAIT';
+
+// Confiance calculée à partir de l’intensité du score
+let confidence = Math.min(Math.abs(adaptiveScore) * 25, 95); // Max 95%
+confidence = +confidence.toFixed(1); // arrondi
+
+// Seuil minimal de confiance pour valider un signal
+let signal = 'WAIT';
+if (direction === 'BUY' && confidence >= 60) signal = 'BUY';
+else if (direction === 'SELL' && confidence >= 60) signal = 'SELL';
+
+// Ajustement confiance baissière
+const confidenceBear = signal === 'SELL' ? confidence : 100 - confidence;
+
+return {
+  price,
+  signal,
+  confidence,
+  confidenceBear: +confidenceBear.toFixed(1),
+  pattern,
+  trend5,
+  trend15,
+  tags,
+  details,
+  commentaire: null
+};
 }
 
 
