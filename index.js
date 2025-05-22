@@ -877,6 +877,7 @@ app.get('/clear-entry', (req, res) => {
 
 app.get('/dashboard', async (req, res) => {
   const igPos = await fetchLatestIGPosition();
+console.log('[DEBUG] Position IG détectée :', igPos);;
   global.latestIGPosition = igPos;
 
   const entryHTML = igPos ? `
