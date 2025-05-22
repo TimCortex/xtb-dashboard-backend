@@ -774,52 +774,30 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   let confidenceBear = +(100 - confidence).toFixed(1);
   let signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
 
-  // ⚠️ Nouvelle logique tendance / pullback
+  // ⚠️ Seule la tendance M5 peut annuler le signal
   if (
     (signal === 'BUY' && trend5 === 'BAISSIÈRE') ||
     (signal === 'SELL' && trend5 === 'HAUSSIÈRE')
   ) {
     signal = 'WAIT';
     details.push('⏸ Signal annulé - contradictoire avec tendance M5');
-  } else if (
-    (signal === 'BUY' && trend15 === 'BAISSIÈRE') ||
-    (signal === 'SELL' && trend15 === 'HAUSSIÈRE')
-  ) {
-    const isNearSR = distanceToSupport < lastATR * 0.5 || distanceToResistance < lastATR * 0.5;
-    const hasPattern = pattern != null;
-    if (!isNearSR || !hasPattern) {
-      confidence -= 10;
-      details.push('⚠️ Score réduit - contresens M15 sans pullback clair');
-      if (confidence < 65 && confidence > 35) {
-        signal = 'WAIT';
-        confidence = 50;
-        confidenceBear = 50;
-        details.push('⏸ Signal neutralisé après pénalité tendance M15');
-      }
-    } else {
-      details.push('🔄 Pullback détecté - contre-tendance M15 accepté');
-    }
   }
 
-  // Momentum triggers (inchangés)
-  let momentumTrigger = false;
+  // Momentum triggers
   if (macd.length >= 2) {
     const prev = macd.at(-2);
     if (prev && lastMACD && ((prev.MACD <= prev.signal && lastMACD.MACD > lastMACD.signal) || (prev.MACD >= prev.signal && lastMACD.MACD < lastMACD.signal))) {
-      momentumTrigger = true;
       details.push('⚡ Croisement MACD détecté');
     }
   }
   if (rsi.length >= 2 && Math.abs(rsi.at(-1) - rsi.at(-2)) > 5) {
-    momentumTrigger = true;
     details.push(`⚡ Mouvement RSI (${rsi.at(-2).toFixed(1)} ➝ ${rsi.at(-1).toFixed(1)})`);
   }
   if (stoch.length >= 2 && Math.abs(lastStoch.k - stoch.at(-2).k) > 10) {
-    momentumTrigger = true;
     details.push(`⚡ Accélération stochastique (${stoch.at(-2).k.toFixed(1)} ➝ ${lastStoch.k.toFixed(1)})`);
   }
 
-  // Logique anti-répétition
+  // Anti-répétition
   if (context?.lastSignal === signal && signal !== 'WAIT') {
     const prevPrice = global.latestSignal?.price || 0;
     const priceDiff = (price - prevPrice) * 10000 * (signal === 'BUY' ? 1 : -1);
@@ -859,6 +837,7 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     }
   };
 }
+
 
 
 
