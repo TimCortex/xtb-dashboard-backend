@@ -577,141 +577,109 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const macd = technicalIndicators.MACD.calculate({ values: close, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
   const stoch = technicalIndicators.Stochastic.calculate({ high, low, close, period: 5, signalPeriod: 3 });
   const ichimoku = technicalIndicators.IchimokuCloud.calculate({ high, low, conversionPeriod: 9, basePeriod: 26, spanPeriod: 52, displacement: 26 });
+  const atr = technicalIndicators.ATR.calculate({ period: 14, high, low, close });
 
-  let bull = 0;
-  let bear = 0;
+  const lastMACD = macd.at(-1);
+  const lastStoch = stoch.at(-1);
+  const lastIchi = ichimoku.at(-1);
+  const lastATR = atr.at(-1);
 
   // EMA
   if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) {
-    bull += 0.8;
     tags.push('EMA haussière');
-    details.push('✅ EMA50 > EMA100 (+0.8)');
+    details.push('✅ EMA50 > EMA100');
   } else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) {
-    bear += 0.8;
     tags.push('EMA baissière');
-    details.push('❌ EMA50 < EMA100 (+0.8 bear)');
+    details.push('❌ EMA50 < EMA100');
   }
 
   // RSI
   if (rsi.at(-1) > 50) {
-    bull += 0.6;
     tags.push('RSI>50');
-    details.push('✅ RSI > 50 (+0.6)');
+    details.push('✅ RSI > 50');
   } else {
-    bear += 0.6;
     tags.push('RSI<50');
-    details.push('❌ RSI < 50 (+0.6 bear)');
+    details.push('❌ RSI < 50');
   }
 
   // MACD
-  const lastMACD = macd.at(-1);
   if (lastMACD && lastMACD.MACD > lastMACD.signal) {
-    bull += 0.6;
     tags.push('MACD haussier');
-    details.push('✅ MACD haussier (+0.6)');
+    details.push('✅ MACD haussier');
   } else if (lastMACD) {
-    bear += 0.6;
     tags.push('MACD baissier');
-    details.push('❌ MACD baissier (+0.6 bear)');
+    details.push('❌ MACD baissier');
   }
 
   // Stochastique
-  const lastStoch = stoch.at(-1);
   if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) {
-    bull += 0.4;
     tags.push('Stoch haussier');
-    details.push('✅ Stochastique haussier (+0.4)');
+    details.push('✅ Stochastique haussier');
   } else if (lastStoch && lastStoch.k < lastStoch.d && lastStoch.k > 20) {
-    bear += 0.4;
     tags.push('Stoch baissier');
-    details.push('❌ Stochastique baissier (+0.4 bear)');
+    details.push('❌ Stochastique baissier');
   }
 
   // Ichimoku
-  const lastIchi = ichimoku.at(-1);
   if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) {
-    bull += 0.7;
     tags.push('Ichimoku breakout');
-    details.push('✅ Ichimoku breakout (+0.7)');
+    details.push('✅ Ichimoku breakout');
   } else if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) {
-    bear += 0.7;
     tags.push('Ichimoku breakdown');
-    details.push('❌ Ichimoku breakdown (+0.7 bear)');
+    details.push('❌ Ichimoku breakdown');
   }
-
-   // Calcul de la confiance
-  const total = bull + bear;
-  let confidence = total > 0 ? (bull / total) * 100 : 0;
-  let confidenceBear = total > 0 ? (bear / total) * 100 : 0;
-
-  // Volatilité
-  const atr = technicalIndicators.ATR.calculate({
-  period: 14,
-  high,
-  low,
-  close
-});
-
-const lastATR = atr.at(-1);
-if (lastATR) {
-  const atrPips = lastATR * 10000;
-  if (lastATR < 0.0004) {
-    confidence -= 0.3;
-    confidenceBear -= 0.3;
-    details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips) → Confiance réduite`);
-  } else if (lastATR > 0.0015) {
-    confidence -= 0.3;
-    confidenceBear -= 0.3;
-    details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips) → Confiance réduite`);
-  } else {
-    confidence += 0.2;
-    confidenceBear += 0.2;
-    details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips) → Bonus de confiance`);
-  }
-}
-
 
   // Tendance externe M5 / M15
   if (trend5 === 'HAUSSIÈRE') {
-    bull += 0.6;
     tags.push('Trend M5 haussier');
-    details.push('✅ Tendance M5 haussière (+0.6)');
+    details.push('✅ Tendance M5 haussière');
   } else if (trend5 === 'BAISSIÈRE') {
-    bear += 0.6;
     tags.push('Trend M5 baissier');
-    details.push('❌ Tendance M5 baissière (+0.6 bear)');
+    details.push('❌ Tendance M5 baissière');
   }
   if (trend15 === 'HAUSSIÈRE') {
-    bull += 0.4;
     tags.push('Trend M15 haussier');
-    details.push('✅ Tendance M15 haussière (+0.4)');
+    details.push('✅ Tendance M15 haussière');
   } else if (trend15 === 'BAISSIÈRE') {
-    bear += 0.4;
     tags.push('Trend M15 baissier');
-    details.push('❌ Tendance M15 baissière (+0.4 bear)');
+    details.push('❌ Tendance M15 baissière');
   }
 
   // Pattern
   const candles = data.slice(-4);
   const pattern = detectMultiCandlePattern(candles);
   if (pattern === '🟩 Avalement haussier') {
-    bull += 0.7;
     tags.push('Pattern haussier');
-    details.push('✅ Pattern : Avalement haussier (+0.7)');
+    details.push('✅ Pattern : Avalement haussier');
   } else if (pattern === '🟥 Avalement baissier') {
-    bear += 0.7;
     tags.push('Pattern baissier');
-    details.push('❌ Pattern : Avalement baissier (+0.7 bear)');
+    details.push('❌ Pattern : Avalement baissier');
   }
 
- 
+  // ATR - Volatilité
+  if (lastATR) {
+    const atrPips = lastATR * 10000;
+    if (lastATR < 0.0004) {
+      tags.push('Volatilité faible');
+      details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips)`);
+    } else if (lastATR > 0.0015) {
+      tags.push('Volatilité élevée');
+      details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips)`);
+    } else {
+      tags.push('Volatilité idéale');
+      details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips)`);
+    }
+  }
 
-  // Détermination du signal
-  const signal = confidence >= 70 ? 'BUY' : confidenceBear >= 70 ? 'SELL' : 'WAIT';
+  // Score adaptatif basé sur les tags
+  const adaptiveScore = applyWeights(tags);
+  const signal = adaptiveScore >= 2 ? 'BUY' : adaptiveScore <= -2 ? 'SELL' : 'WAIT';
+  const confidence = Math.min(100, Math.max(0, adaptiveScore * 25 + 50));
+  const confidenceBear = 100 - confidence;
 
-  // Commentaire en cas de contradiction évidente
+  // Contradiction pattern/signal
   let commentaire = null;
-  if ((signal === 'BUY' && pattern && pattern.includes('🟥')) || (signal === 'SELL' && pattern && pattern.includes('🟩'))) {
+  if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
     commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
     details.push(commentaire);
   }
@@ -726,9 +694,12 @@ if (lastATR) {
     trend15,
     tags,
     details,
-    commentaire
+    commentaire,
+    context: { tags }
   };
 }
+
+
 
 
 
