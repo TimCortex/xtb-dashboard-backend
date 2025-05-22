@@ -881,7 +881,7 @@ const data15m = await fetchData(15);
     }
   });
 }
-}
+
 
     let msg = `_________________________
 `;
@@ -940,7 +940,7 @@ app.get('/dashboard', async (req, res) => {
     </div>
   `;
 
-  const signalSummaryHTML = getSignalSummaryHTML(); // 👈 Ajout de la synthèse des signaux
+  const signalSummaryHTML = getSignalSummaryHTML();
 
   const annonces = loadAnnouncementWindows();
   const rows = annonces.map(({ time }) => `
@@ -976,22 +976,31 @@ app.get('/dashboard', async (req, res) => {
         .warning {
           background-color: #f0ad4e33;
         }
-        table {
-          border-collapse: collapse;
-          width: 100%;
-          margin-top: 10px;
-        }
-        th, td {
-          padding: 6px 10px;
-          text-align: center;
-          border: 1px solid #444;
+        .danger {
+          background-color: #e74c3c;
+          color: white;
+          padding: 8px 12px;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
         }
         input, select {
+          margin-right: 10px;
           padding: 6px;
           background: #23272a;
           color: #fff;
           border: 1px solid #444;
           border-radius: 4px;
+        }
+        table {
+          border-collapse: collapse;
+          margin-top: 20px;
+          width: 100%;
+        }
+        th, td {
+          padding: 6px 10px;
+          text-align: center;
+          border: 1px solid #444;
         }
         button {
           padding: 6px 10px;
@@ -1028,7 +1037,7 @@ app.get('/dashboard', async (req, res) => {
       <div style="display: flex; gap: 20px; align-items: flex-start;">
         <div style="flex: 1;">
           ${entryHTML}
-          ${signalSummaryHTML} <!-- 👈 Résumé historique des tags -->
+          ${signalSummaryHTML}
 
           <div class="card">
             <h2>🗓️ Annonces économiques</h2>
@@ -1103,6 +1112,7 @@ app.get('/dashboard', async (req, res) => {
     </html>
   `);
 });
+
 
 
 
