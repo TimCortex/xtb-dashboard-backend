@@ -134,7 +134,7 @@ function scheduleSignalEvaluation(signalObj) {
   activeSignals.set(id, signalObj);
 
   const { direction, price: entryPrice, context } = signalObj;
-  const takeProfit = 5; // TP en pips
+  const takeProfit = 1.5; // TP en pips
   const stopLoss = 5;   // SL en pips
 
   const checkInterval = 5000; // toutes les 5 secondes
