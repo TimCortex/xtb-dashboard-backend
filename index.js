@@ -600,6 +600,33 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push('❌ Ichimoku breakdown (+0.7 bear)');
   }
 
+  // Volatilité
+  const atr = technicalIndicators.ATR.calculate({
+  period: 14,
+  high,
+  low,
+  close
+});
+
+const lastATR = atr.at(-1);
+if (lastATR) {
+  const atrPips = lastATR * 10000;
+  if (lastATR < 0.0004) {
+    confidence -= 0.3;
+    confidenceBear -= 0.3;
+    details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips) → Confiance réduite`);
+  } else if (lastATR > 0.0015) {
+    confidence -= 0.3;
+    confidenceBear -= 0.3;
+    details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips) → Confiance réduite`);
+  } else {
+    confidence += 0.2;
+    confidenceBear += 0.2;
+    details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips) → Bonus de confiance`);
+  }
+}
+
+
   // Tendance externe M5 / M15
   if (trend5 === 'HAUSSIÈRE') {
     bull += 0.6;
@@ -874,6 +901,21 @@ app.get('/dashboard', async (req, res) => {
   const perfData = loadPerformanceData();
   const performanceTable = generatePerformanceTable(perfData);
 
+  const adaptiveScores = getAdaptiveWeights();
+  const tableRows = Object.entries(adaptiveScores).map(([tag, weight]) => {
+    const color = weight < 0.2 ? 'style="background:#f8d7da"' : '';
+    return `<tr ${color}><td>${tag}</td><td>${(weight * 100).toFixed(1)}%</td></tr>`;
+  }).join('');
+
+  const tagTable = `
+    <div class="card">
+      <h2>🧠 Historique des tags & fiabilité</h2>
+      <table style="width:100%; text-align:center;">
+        <thead><tr><th>Tag</th><th>Poids (fiabilité)</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+
   res.send(`
     <html>
     <head>
@@ -897,14 +939,6 @@ app.get('/dashboard', async (req, res) => {
         }
         .warning {
           background-color: #f0ad4e33;
-        }
-        .danger {
-          background-color: #e74c3c;
-          color: white;
-          padding: 8px 12px;
-          border: none;
-          border-radius: 5px;
-          cursor: pointer;
         }
         input, select {
           margin-right: 10px;
@@ -959,6 +993,7 @@ app.get('/dashboard', async (req, res) => {
       <div style="display: flex; gap: 20px; align-items: flex-start;">
         <div style="flex: 1;">
           ${entryHTML}
+          ${tagTable}
 
           <div class="card">
             <h2>🗓️ Annonces économiques</h2>
@@ -978,7 +1013,7 @@ app.get('/dashboard', async (req, res) => {
             <h2>🔔 Dernier Signal <span style="font-size: 0.8em; color: #43b581;">🟢 LIVE</span></h2>
             <div id="notifContent" class="signal-box">Chargement...</div>
             <div id="notifTime" style="font-size: 12px; margin-top: 4px; color: #999;"></div>
-            <audio id="notifSound" src="	https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
+            <audio id="notifSound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
           </div>
         </div>
       </div>
@@ -1036,6 +1071,7 @@ app.get('/dashboard', async (req, res) => {
 
 
 
+
 app.post('/dashboard', (req, res) => {
   try {
     const annonces = JSON.parse(req.body.annonces);
@@ -1084,6 +1120,33 @@ app.get('/status', (req, res) => {
 
 app.get('/latest-signal', (req, res) => {
   res.json(global.latestSignal || { message: 'Aucun signal récent.', date: null });
+});
+
+app.get('/api/performance-tags', (req, res) => {
+  const results = loadSignalResults();
+  const counts = {};
+
+  for (const sig of results) {
+    for (const tag of sig.context?.tags || []) {
+      if (!counts[tag]) counts[tag] = { success: 0, fail: 0 };
+      sig.success ? counts[tag].success++ : counts[tag].fail++;
+    }
+  }
+
+  const data = Object.entries(counts).map(([tag, { success, fail }]) => {
+    const total = success + fail;
+    const rate = total ? (success / total) * 100 : 0;
+    const weight = +(rate * 1.2 - 30).toFixed(2);
+    return {
+      tag,
+      success,
+      fail,
+      rate: rate.toFixed(1),
+      weight: weight.toFixed(2)
+    };
+  });
+
+  res.json(data);
 });
 
 app.listen(PORT, () => console.log(`🟢 Serveur ZenScalp actif sur port ${PORT}`));
