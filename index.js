@@ -134,27 +134,42 @@ function scheduleSignalEvaluation(signalObj) {
   activeSignals.set(id, signalObj);
 
   const { direction, price: entryPrice, context } = signalObj;
-  const takeProfit = 1.5; // en pips
-  const stopLoss = 5.0;   // en pips
-
-  const checkInterval = 5000; // 5 secondes
-  const maxWaitTime = 5 * 60 * 1000; // 5 minutes
-
+  const takeProfit = 1.5; // TP en pips
+  const stopLoss = 5;     // SL en pips
+  const checkInterval = 5000; // toutes les 5 secondes
+  const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
   const startTime = Date.now();
 
   const interval = setInterval(async () => {
-    const now = Date.now();
-    if (now - startTime > maxWaitTime) {
+    const currentTime = Date.now();
+
+    // Expiration sans TP/SL atteint
+    if (currentTime - startTime > maxWaitTime) {
       clearInterval(interval);
       activeSignals.delete(id);
-      console.log('⏹️ Évaluation expirée sans TP/SL atteint');
+      console.log('❌ Signal expiré sans TP/SL – enregistré comme échec');
+
+      const latestPrice = await getCurrentPrice();
+      const result = {
+        timestamp: new Date().toISOString(),
+        direction,
+        entryPrice,
+        exitPrice: latestPrice,
+        pips: ((latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
+        outcome: 'fail',
+        context
+      };
+
+      const existing = loadSignalResults();
+      existing.push(result);
+      saveSignalResults(existing);
       return;
     }
 
-    const current = await getCurrentPrice();
-    if (!current) return;
+    const latestPrice = await getCurrentPrice();
+    if (!latestPrice) return;
 
-    const pips = (current - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+    const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
     const roundedPips = +pips.toFixed(1);
 
     let outcome = null;
@@ -167,7 +182,7 @@ function scheduleSignalEvaluation(signalObj) {
         timestamp: new Date().toISOString(),
         direction,
         entryPrice,
-        exitPrice: current,
+        exitPrice: latestPrice,
         pips: roundedPips,
         outcome,
         context
@@ -176,11 +191,11 @@ function scheduleSignalEvaluation(signalObj) {
       const existing = loadSignalResults();
       existing.push(result);
       saveSignalResults(existing);
-
       activeSignals.delete(id);
     }
   }, checkInterval);
 }
+
 
 
 
