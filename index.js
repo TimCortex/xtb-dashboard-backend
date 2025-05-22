@@ -13,6 +13,8 @@ const activeSignals = new Map(); // Map temporaire en RAM
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'Public')));
+
 
 const PORT = process.env.PORT || 3000;
 const POLYGON_API_KEY = 'aag8xgN6WM0Q83HLaOt9WqidQAyKrGtp';
@@ -1024,7 +1026,7 @@ app.get('/dashboard', async (req, res) => {
     </head>
     <body>
       <h1>
-        <img src="/Public/ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
+        <img src="/ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
         ZenScalp Dashboard
       </h1>
 
