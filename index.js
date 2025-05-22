@@ -136,13 +136,12 @@ function scheduleSignalEvaluation(signalObj) {
   const { direction, price: entryPrice, context } = signalObj;
   const takeProfit = 1.5; // TP en pips
   const stopLoss = 5;     // SL en pips
-  const checkInterval = 5000;
-  const maxWaitTime = 10 * 60 * 1000;
+  const checkInterval = 5000; // toutes les 5 secondes
+  const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
   const startTime = Date.now();
 
   const interval = setInterval(async () => {
     const currentTime = Date.now();
-
     const latestPrice = await getCurrentPrice();
     if (!latestPrice) return;
 
@@ -153,20 +152,16 @@ function scheduleSignalEvaluation(signalObj) {
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
-    // ✅ Si TP/SL atteint
     if (outcome) {
       clearInterval(interval);
       activeSignals.delete(id);
-
-      const finalPrice = await getCurrentPrice();
-      const finalPips = ((finalPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1);
 
       const result = {
         timestamp: new Date().toISOString(),
         direction,
         entryPrice,
-        exitPrice: finalPrice,
-        pips: finalPips,
+        exitPrice: latestPrice,
+        pips: roundedPips,
         outcome,
         context
       };
@@ -177,20 +172,20 @@ function scheduleSignalEvaluation(signalObj) {
       return;
     }
 
-    // ✅ Si le temps max est dépassé sans TP/SL
+    // Si le signal expire sans atteindre TP/SL → échec
     if (currentTime - startTime > maxWaitTime) {
       clearInterval(interval);
       activeSignals.delete(id);
 
-      const finalPrice = await getCurrentPrice();
-      const finalPips = ((finalPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1);
+      const retryPrice = await getCurrentPrice();
+      const retryPips = (retryPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
 
       const result = {
         timestamp: new Date().toISOString(),
         direction,
         entryPrice,
-        exitPrice: finalPrice,
-        pips: finalPips,
+        exitPrice: retryPrice,
+        pips: +retryPips.toFixed(1),
         outcome: 'fail',
         context
       };
@@ -201,6 +196,7 @@ function scheduleSignalEvaluation(signalObj) {
     }
   }, checkInterval);
 }
+
 
 
 
