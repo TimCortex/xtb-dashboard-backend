@@ -199,16 +199,16 @@ function generatePerformanceData(start = new Date('2025-06-01'), days = 250) {
   for (let i = 0; i < businessDays.length; i++) {
     const date = businessDays[i];
     const objectifCapital = capital * 1.013;
-const objectif = +(objectifCapital - capital).toFixed(2);
-rows.push({
-  date: date.toISOString().split('T')[0],
-  capitalObjectif: +objectifCapital.toFixed(2),
-  capital: +capital.toFixed(2),
-  objectif,
-  resultat: null,
-  ecart: null
-});
-capital = objectifCapital;
+    const objectif = +(objectifCapital - capital).toFixed(2);
+    rows.push({
+      date: date.toISOString().split('T')[0],
+      capitalObjectif: +objectifCapital.toFixed(2),
+      capital: +capital.toFixed(2),
+      objectif,
+      resultat: null,
+      ecart: null
+    });
+    capital = objectifCapital;
   }
   return rows;
 }
@@ -495,8 +495,8 @@ function analyzeM15(data) {
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
   const price = close.at(-1);
   return (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) ? 'HAUSSIÈRE'
-       : (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) ? 'BAISSIÈRE'
-       : 'INDÉTERMINÉE';
+    : (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) ? 'BAISSIÈRE'
+      : 'INDÉTERMINÉE';
 }
 
 function analyzeTrendM5M15(data5m, data15m) {
@@ -810,48 +810,48 @@ async function sendToDiscord(msg) {
 cron.schedule('*/30 * * * * *', async () => {
   try {
     if (isDuringPauseWindow()) {
-  if (!isPaused) {
-    isPaused = true;
-    const msg = '⏸️ Analyse suspendue - annonce économique en cours.';
-    await sendToDiscord(msg);
-    global.latestSignal = {
-      message: msg,
-      date: new Date()
-    };
-  }
-  return;
-}
+      if (!isPaused) {
+        isPaused = true;
+        const msg = '⏸️ Analyse suspendue - annonce économique en cours.';
+        await sendToDiscord(msg);
+        global.latestSignal = {
+          message: msg,
+          date: new Date()
+        };
+      }
+      return;
+    }
     if (isPaused) {
-  isPaused = false;
-  const msg = '✅ Reprise des analyses ZenScalp.';
-  await sendToDiscord(msg);
-  global.latestSignal = {
-    message: msg,
-    date: new Date()
-  };
-}
+      isPaused = false;
+      const msg = '✅ Reprise des analyses ZenScalp.';
+      await sendToDiscord(msg);
+      global.latestSignal = {
+        message: msg,
+        date: new Date()
+      };
+    }
 
 
     const data5m = await fetchData(5);
-const data15m = await fetchData(15);
+    const data15m = await fetchData(15);
     const price = await getCurrentPrice();
     const { trend5, trend15 } = analyzeTrendM5M15(data5m, data15m);
     const analysis = generateVisualAnalysis(data5m, trend5, trend15);
 
-   if (analysis.signal !== 'WAIT') {
-  scheduleSignalEvaluation({
-    direction: analysis.signal,
-    price,
-    context: {
-      tags: analysis.tags,
-      confidence: analysis.confidence,
-      confidenceBear: analysis.confidenceBear,
-      pattern: analysis.pattern,
-      trend5: analysis.trend5,
-      trend15: analysis.trend15
+    if (analysis.signal !== 'WAIT') {
+      scheduleSignalEvaluation({
+        direction: analysis.signal,
+        price,
+        context: {
+          tags: analysis.tags,
+          confidence: analysis.confidence,
+          confidenceBear: analysis.confidenceBear,
+          pattern: analysis.pattern,
+          trend5: analysis.trend5,
+          trend15: analysis.trend15
+        }
+      });
     }
-  });
-}
 
 
     let msg = `_________________________
@@ -867,19 +867,19 @@ const data15m = await fetchData(15);
     if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}
 `;
     if (analysis.details && analysis.details.length) {
-  msg += '\n🧾 **Détails analyse technique :**\n' + analysis.details.map(d => `• ${d}`).join('\n');
-}
+      msg += '\n🧾 **Détails analyse technique :**\n' + analysis.details.map(d => `• ${d}`).join('\n');
+    }
     if (entryPrice && entryDirection) {
-  msg += `\n⛳ **Entry :** ${entryPrice.toFixed(5)} (${entryDirection})`;
-  msg += `\n📉 **Écart actuel :** ${Math.round((price - entryPrice) * 10000)} pips`;
-}
+      msg += `\n⛳ **Entry :** ${entryPrice.toFixed(5)} (${entryDirection})`;
+      msg += `\n📉 **Écart actuel :** ${Math.round((price - entryPrice) * 10000)} pips`;
+    }
 
 
     await sendToDiscord(msg);
     global.latestSignal = {
-    message: msg,
-    date: new Date()
-};
+      message: msg,
+      date: new Date()
+    };
 
   } catch (e) {
     console.error('Erreur visuelle:', e.message);
@@ -1008,7 +1008,8 @@ app.get('/dashboard', async (req, res) => {
       <div style="display: flex; gap: 20px; align-items: flex-start;">
         <div style="flex: 1;">
           ${entryHTML}
-          ${signalSummaryHTML}
+          <div id="tagSummary">${signalSummaryHTML}</div>
+
 
           <div class="card">
             <h2>🗓️ Annonces économiques</h2>
@@ -1077,6 +1078,19 @@ app.get('/dashboard', async (req, res) => {
         }
 
         refreshSignal();
+        async function refreshTags() {
+  try {
+    const res = await fetch('/latest-tags-summary');
+    const html = await res.text();
+    document.getElementById('tagSummary').innerHTML = html;
+  } catch (e) {
+    document.getElementById('tagSummary').innerHTML = "<p>⚠️ Erreur chargement tags</p>";
+  }
+}
+
+refreshTags();
+setInterval(refreshTags, 30000); // toutes les 30s
+
         setInterval(refreshSignal, 30000);
       </script>
     </body>
@@ -1115,8 +1129,8 @@ app.post('/set-entry', (req, res) => {
   const { price, direction } = req.body;
   if (!price || !['BUY', 'SELL'].includes(direction)) return res.status(400).send('Paramètres invalides');
   global.entryPrice = parseFloat(price);
-global.entryDirection = direction;
-global.entryTime = Date.now();
+  global.entryDirection = direction;
+  global.entryTime = Date.now();
 
   res.redirect('/dashboard');
 });
@@ -1126,6 +1140,12 @@ app.post('/clear-entry', (req, res) => {
   entryDirection = null;
   res.redirect('/dashboard');
 });
+
+app.get('/latest-tags-summary', (req, res) => {
+  const html = getSignalSummaryHTML();
+  res.send(html);
+});
+
 
 app.get('/status', (req, res) => {
   res.json({
