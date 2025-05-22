@@ -774,46 +774,36 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   let confidenceBear = +(100 - confidence).toFixed(1);
   let signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
 
-  let momentumTrigger = false;
-  if (macd.length >= 2) {
-    const prev = macd.at(-2);
-    if (prev && lastMACD && ((prev.MACD <= prev.signal && lastMACD.MACD > lastMACD.signal) || (prev.MACD >= prev.signal && lastMACD.MACD < lastMACD.signal))) {
-      momentumTrigger = true;
-      details.push('⚡ Croisement MACD détecté');
-    }
-  }
-  if (rsi.length >= 2 && Math.abs(rsi.at(-1) - rsi.at(-2)) > 5) {
-    momentumTrigger = true;
-    details.push(`⚡ Mouvement RSI (${rsi.at(-2).toFixed(1)} ➝ ${rsi.at(-1).toFixed(1)})`);
-  }
-  if (stoch.length >= 2 && Math.abs(lastStoch.k - stoch.at(-2).k) > 10) {
-    momentumTrigger = true;
-    details.push(`⚡ Accélération stochastique (${stoch.at(-2).k.toFixed(1)} ➝ ${lastStoch.k.toFixed(1)})`);
-  }
-
-  // Logique anti-répétition intelligente
-if (context?.lastSignal === signal && signal !== 'WAIT') {
-  const prevPrice = global.latestSignal?.price || 0;
-  const priceDiff = (price - prevPrice) * 10000 * (signal === 'BUY' ? 1 : -1); // en pips
-
-  const priceThreshold = 2; // seuil minimal d'écart pour répéter le même signal
-  const indicatorsChanged =
-    tags.some(t => !(context?.tags || []).includes(t)) ||
-    (context?.tags || []).some(t => !tags.includes(t)) ||
-    context?.tags?.length !== tags.length;
-
-  if (!indicatorsChanged || priceDiff < priceThreshold) {
-    signal = 'WAIT';
-    confidence = 50;
-    confidenceBear = 50;
-    details.push('⏸ Signal identique sans évolution notable — mis en attente.');
-  }
-}
-
   let commentaire = null;
   if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
     commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
     details.push(commentaire);
+  }
+
+  if ((signal === 'BUY' && trend15 === 'BAISSIÈRE') || (signal === 'SELL' && trend15 === 'HAUSSIÈRE')) {
+    details.push('⛔ Conflit avec la tendance M15 — signal annulé.');
+    signal = 'WAIT';
+    confidence = 50;
+    confidenceBear = 50;
+  }
+
+  // Logique anti-répétition intelligente
+  if (context?.lastSignal === signal && signal !== 'WAIT') {
+    const prevPrice = global.latestSignal?.price || 0;
+    const priceDiff = (price - prevPrice) * 10000 * (signal === 'BUY' ? 1 : -1);
+
+    const priceThreshold = 3; // seuil renforcé
+    const indicatorsChanged =
+      tags.some(t => !(context?.tags || []).includes(t)) ||
+      (context?.tags || []).some(t => !tags.includes(t)) ||
+      context?.tags?.length !== tags.length;
+
+    if (!indicatorsChanged || priceDiff < priceThreshold) {
+      signal = 'WAIT';
+      confidence = 50;
+      confidenceBear = 50;
+      details.push('⏸ Signal identique sans évolution significative — mis en attente.');
+    }
   }
 
   return {
@@ -833,6 +823,7 @@ if (context?.lastSignal === signal && signal !== 'WAIT') {
     }
   };
 }
+
 
 
 
