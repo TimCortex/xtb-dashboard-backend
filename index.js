@@ -182,6 +182,10 @@ function scheduleSignalEvaluation(signalObj) {
   }, checkInterval);
 }
 
+function saveSignalResults(results) {
+  fs.writeFileSync(SIGNAL_RESULT_FILE, JSON.stringify(results, null, 2));
+}
+
 
 function loadSignalHistory() {
   try {
