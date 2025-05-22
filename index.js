@@ -1061,8 +1061,26 @@ app.get('/dashboard', async (req, res) => {
 
   const signalSummaryHTML = getSignalSummaryHTML();
 
+  const signalHistory = loadSignalHistory();
+  const rows = signalHistory.slice(-20).reverse().map(s => {
+    const color = s.success === true ? '#28a745' : s.success === false ? '#e74c3c' : '#999';
+    const label = s.success === true ? 'Succès' : s.success === false ? 'Échec' : '⏳';
+    const time = new Date(s.time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `<tr><td>${time}</td><td>${s.signal}</td><td>${s.price}</td><td style="color:${color}; font-weight:bold;">${label}</td></tr>`;
+  }).join('');
+
+  const signalHistoryHTML = `
+    <div class="card">
+      <h2>📅 Historique des derniers signaux</h2>
+      <table>
+        <tr><th>Heure</th><th>Signal</th><th>Prix</th><th>Résultat</th></tr>
+        ${rows}
+      </table>
+    </div>
+  `;
+
   const annonces = loadAnnouncementWindows();
-  const rows = annonces.map(({ time }) => `
+  const annonceRows = annonces.map(({ time }) => `
     <tr>
       <td><input type="time" name="times" value="${time}" required></td>
       <td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>
@@ -1077,102 +1095,34 @@ app.get('/dashboard', async (req, res) => {
       <title>ZenScalp Dashboard</title>
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
       <style>
-        body {
-          font-family: 'Segoe UI', sans-serif;
-          margin: 40px;
-          background: #1e1f22;
-          color: #dcddde;
-        }
-        h1, h2 {
-          color: #ffffff;
-        }
-        .card {
-          background: #2f3136;
-          padding: 20px;
-          border-radius: 10px;
-          box-shadow: 0 0 10px rgba(0,0,0,0.3);
-          margin-bottom: 20px;
-        }
-        .warning {
-          background-color: #f0ad4e33;
-        }
-        .danger {
-          background-color: #e74c3c;
-          color: white;
-          padding: 8px 12px;
-          border: none;
-          border-radius: 5px;
-          cursor: pointer;
-        }
-        input, select {
-          margin-right: 10px;
-          padding: 6px;
-          background: #23272a;
-          color: #fff;
-          border: 1px solid #444;
-          border-radius: 4px;
-        }
-        table {
-          border-collapse: collapse;
-          margin-top: 20px;
-          width: 100%;
-        }
-        th, td {
-          padding: 6px 10px;
-          text-align: center;
-          border: 1px solid #444;
-        }
-        button {
-          padding: 6px 10px;
-          cursor: pointer;
-          border-radius: 5px;
-          border: none;
-          background-color: #5865f2;
-          color: white;
-        }
-        .signal-box {
-          background: #2f3136;
-          color: #dcddde;
-          border-radius: 8px;
-          padding: 15px;
-          font-family: inherit;
-          white-space: pre-wrap;
-          line-height: 1.5;
-          font-size: 14px;
-          box-shadow: 0 0 5px rgba(0,0,0,0.3);
-          opacity: 0;
-          animation: fadeIn 1s forwards;
-        }
-        @keyframes fadeIn {
-          to { opacity: 1; }
-        }
+        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background: #1e1f22; color: #dcddde; }
+        h1, h2 { color: #ffffff; }
+        .card { background: #2f3136; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.3); margin-bottom: 20px; }
+        .warning { background-color: #f0ad4e33; }
+        input, select { margin-right: 10px; padding: 6px; background: #23272a; color: #fff; border: 1px solid #444; border-radius: 4px; }
+        table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+        th, td { padding: 6px 10px; text-align: center; border: 1px solid #444; }
+        button { padding: 6px 10px; cursor: pointer; border-radius: 5px; border: none; background-color: #5865f2; color: white; }
       </style>
     </head>
     <body>
-      <h1>
-        <img src="/ZenScalp_LogoA01.jpg" alt="ZenScalp" style="height: 32px; vertical-align: middle; margin-right: 10px;">
-        ZenScalp Dashboard
-      </h1>
-
+      <h1>ZenScalp Dashboard</h1>
       <div style="display: flex; gap: 20px; align-items: flex-start;">
         <div style="flex: 1;">
           ${entryHTML}
           <div id="tagSummary">${signalSummaryHTML}</div>
-
-
+          ${signalHistoryHTML}
           <div class="card">
             <h2>🗓️ Annonces économiques</h2>
             <form method="POST" action="/dashboard" onsubmit="return updateAnnouncements()">
-              <table id="timesTable">${rows}</table>
+              <table id="timesTable">${annonceRows}</table>
               <button type="button" onclick="addRow()">➕ Ajouter une annonce</button><br><br>
               <input type="hidden" name="annonces" id="jsonData">
               <button type="submit">💾 Enregistrer</button>
             </form>
           </div>
-
           ${performanceTable}
         </div>
-
         <div style="flex: 1;">
           <div class="card" id="notifCard">
             <h2>🔔 Dernier Signal <span style="font-size: 0.8em; color: #43b581;">🟢 LIVE</span></h2>
@@ -1182,97 +1132,46 @@ app.get('/dashboard', async (req, res) => {
           </div>
         </div>
       </div>
-
       <script>
-  let lastSignalText = '';
+        async function refreshTags() {
+          const res = await fetch('/latest-tags-summary');
+          const html = await res.text();
+          document.getElementById('tagSummary').innerHTML = html;
+        }
 
-  function addRow() {
-    const table = document.getElementById('timesTable');
-    const row = table.insertRow();
-    row.innerHTML = '<td><input type="time" name="times" required></td>' +
-                    '<td><button type="button" onclick="this.parentNode.parentNode.remove()">🗑️</button></td>';
-  }
+        async function refreshSignalHistory() {
+          const res = await fetch('/latest-signal-history');
+          const html = await res.text();
+          const container = document.querySelector('.card h2:contains("📅 Historique")')?.parentNode;
+          if (container) container.innerHTML = html;
+        }
 
-  function updateAnnouncements() {
-    const inputs = document.getElementsByName('times');
-    const data = [];
-    for (const input of inputs) {
-      if (input.value) data.push({ time: input.value });
-    }
-    document.getElementById('jsonData').value = JSON.stringify(data);
-    return true;
-  }
-
-  async function refreshSignal() {
-    try {
-      const res = await fetch('/latest-signal');
-      const data = await res.json();
-      const el = document.getElementById('notifContent');
-      const timeEl = document.getElementById('notifTime');
-
-      if (data.message && data.message !== lastSignalText) {
-        el.innerText = data.message;
-        const date = new Date(data.date);
-        const timeStr = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        timeEl.innerText = "🕒 Signal généré à " + timeStr;
-        lastSignalText = data.message;
-
-        const sound = document.getElementById('notifSound');
-        if (sound) sound.play();
-      }
-    } catch (e) {
-      document.getElementById('notifContent').innerText = "⚠️ Erreur lors du chargement.";
-      document.getElementById('notifTime').innerText = '';
-    }
-  }
-
-  function renderPieChart(success, fail) {
-    const ctx = document.getElementById('pieChart')?.getContext('2d');
-    if (!ctx) return;
-    if (window.myChart) window.myChart.destroy();
-
-    window.myChart = new Chart(ctx, {
-      type: 'pie',
-      data: {
-        labels: ['Succès', 'Échecs'],
-        datasets: [{
-          data: [success, fail],
-          backgroundColor: ['#28a745', '#e74c3c'],
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom' } }
-      }
-    });
-  }
-
-  async function refreshTags() {
-    try {
-      const res = await fetch('/latest-tags-summary');
-      const html = await res.text();
-      document.getElementById('tagSummary').innerHTML = html;
-
-      const canvas = document.getElementById('pieChart');
-      if (canvas) {
-        const success = parseInt(canvas.getAttribute('data-success')) || 0;
-        const fail = parseInt(canvas.getAttribute('data-fail')) || 0;
-        renderPieChart(success, fail);
-      }
-    } catch (e) {
-      document.getElementById('tagSummary').innerHTML = "<p>⚠️ Erreur chargement tags</p>";
-    }
-  }
-
-  refreshSignal();
-  refreshTags();
-  setInterval(refreshSignal, 30000);
-  setInterval(refreshTags, 30000);
-</script>
+        setInterval(refreshTags, 30000);
+        setInterval(refreshSignalHistory, 30000);
+      </script>
     </body>
     </html>
   `);
 });
+
+app.get('/latest-signal-history', (req, res) => {
+  const signalHistory = loadSignalHistory();
+  const rows = signalHistory.slice(-20).reverse().map(s => {
+    const color = s.success === true ? '#28a745' : s.success === false ? '#e74c3c' : '#999';
+    const label = s.success === true ? 'Succès' : s.success === false ? 'Échec' : '⏳';
+    const time = new Date(s.time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `<tr><td>${time}</td><td>${s.signal}</td><td>${s.price}</td><td style="color:${color}; font-weight:bold;">${label}</td></tr>`;
+  }).join('');
+
+  res.send(`<div class="card">
+    <h2>📅 Historique des derniers signaux</h2>
+    <table>
+      <tr><th>Heure</th><th>Signal</th><th>Prix</th><th>Résultat</th></tr>
+      ${rows}
+    </table>
+  </div>`);
+});
+
 
 
 
