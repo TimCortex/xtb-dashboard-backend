@@ -145,8 +145,8 @@ function scheduleSignalEvaluation(signalObj) {
   global.isSignalActive = true;
 
   const { direction, context } = signal;
-  const takeProfit = 1.5; // en pips
-  const stopLoss = 5;     // en pips
+  const takeProfit = 2.1; // en pips
+  const stopLoss = 6;     // en pips
   const checkInterval = 5000;
   const maxWaitTime = 10 * 60 * 1000;
   const startTime = Date.now();
