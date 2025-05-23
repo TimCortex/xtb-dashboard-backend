@@ -180,7 +180,7 @@ function scheduleSignalEvaluation(signalObj) {
 
       const timeExpired = currentTime - startTime > maxWaitTime;
 
-      if (outcome || timeExpired) {
+      if (outcome) {
         clearInterval(interval);
         activeSignals.delete(id);
 
@@ -1365,6 +1365,10 @@ app.get('/dashboard', async (req, res) => {
       const res = await fetch('/latest-signal-history');
       const html = await res.text();
       document.getElementById('signalHistory').innerHTML = html;
+      const activeRow = document.getElementById('activeRow');
+if (activeRow) {
+  window.globalActiveStart = Date.now(); // Redémarre le timer
+}
     } catch (e) {
       document.getElementById('signalHistory').innerHTML = "<p>⚠️ Erreur chargement historique signaux</p>";
     }
@@ -1373,9 +1377,9 @@ app.get('/dashboard', async (req, res) => {
   refreshSignal();
   refreshTags();
   refreshSignalHistory();
-  setInterval(refreshSignal, 30000);
-  setInterval(refreshTags, 30000);
-  setInterval(refreshSignalHistory, 30000);
+  setInterval(refreshSignal, 15000);
+  setInterval(refreshTags, 15000);
+  setInterval(refreshSignalHistory, 15000);
 </script>
     </body>
     </html>
