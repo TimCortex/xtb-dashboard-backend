@@ -768,9 +768,10 @@ function analyzeTrendM5M15(data5m, data15m) {
 
 
 
-// ZenScalp - version enrichie avec scoring adaptatif intelligent, détection des rebonds sur résistance et gestion du range trop étroit
+// ZenScalp - version enrichie avec scoring adaptatif intelligent, gestion des volatilités extrêmes, détection des rebonds et gestion du range trop étroit
 
 function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'INDÉTERMINÉE', context = {}) {
+  // Filtre des données
   data = data.filter(c => c && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number' && typeof c.o === 'number');
   const tags = [];
   const details = [];
@@ -791,12 +792,33 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     };
   }
 
+  // Timestamp de la dernière bougie (ms depuis epoch)
+  const lastTs = data.at(-1).t;
+
+  // Pause en cas de forte volatilité
+  if (context.pauseUntil && lastTs < context.pauseUntil) {
+    details.push('⏸ Pause volatilité élevée : attendre 5 minutes');
+    return {
+      price: data.at(-1).c,
+      signal: 'WAIT',
+      confidence: 50,
+      confidenceBear: 50,
+      pattern: null,
+      trend5,
+      trend15,
+      tags,
+      details,
+      commentaire: 'Analyse en pause en raison de forte volatilité.',
+      context
+    };
+  }
+
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
   const price = close.at(-1);
 
-  // Indicateurs classiques
+  // Calcul des indicateurs
   const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
   const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
   const rsi = technicalIndicators.RSI.calculate({ period: 14, values: close });
@@ -810,125 +832,95 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const lastIchi = ichimoku.at(-1);
   const lastATR = atr.at(-1) ?? 0.001;
 
-  // EMA
+  // Détection de volatilité extrême (>0.0020)
+  const extremeVolThreshold = 0.0020;
+  if (lastATR > extremeVolThreshold) {
+    details.push('⚠️ Volatilité extrême détectée, pause 5 minutes');
+    context.pauseUntil = lastTs + 5 * 60 * 1000;
+    // Passage en WAIT
+    return {
+      price,
+      signal: 'WAIT',
+      confidence: 50,
+      confidenceBear: 50,
+      pattern: null,
+      trend5,
+      trend15,
+      tags,
+      details,
+      commentaire: 'Analyse en pause en raison de forte volatilité.',
+      context
+    };
+  }
+
+  // Analyse classique
   if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) tags.push('EMA haussière'), details.push('✅ EMA50 > EMA100');
   else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) tags.push('EMA baissière'), details.push('❌ EMA50 < EMA100');
-  // RSI
   if (rsi.at(-1) > 50) tags.push('RSI>50'), details.push('✅ RSI > 50');
   else tags.push('RSI<50'), details.push('❌ RSI < 50');
-  // MACD
   if (lastMACD && lastMACD.MACD > lastMACD.signal) tags.push('MACD haussier'), details.push('✅ MACD haussier');
   else if (lastMACD) tags.push('MACD baissier'), details.push('❌ MACD baissier');
-  // Stochastic
   if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) tags.push('Stoch haussier'), details.push('✅ Stochastique haussier');
   else if (lastStoch && lastStoch.k < lastStoch.d && lastStoch.k > 20) tags.push('Stoch baissier'), details.push('❌ Stochastique baissier');
-  // Ichimoku
   if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) tags.push('Ichimoku breakout'), details.push('✅ Ichimoku breakout');
   else if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) tags.push('Ichimoku breakdown'), details.push('❌ Ichimoku breakdown');
 
-  // Tendances M5 & M15
   if (trend5 === 'HAUSSIÈRE') tags.push('Trend M5 haussier'), details.push('✅ Tendance M5 haussière');
   else if (trend5 === 'BAISSIÈRE') tags.push('Trend M5 baissier'), details.push('❌ Tendance M5 baissière');
   if (trend15 === 'HAUSSIÈRE') tags.push('Trend M15 haussier'), details.push('✅ Tendance M15 haussière');
   else if (trend15 === 'BAISSIÈRE') tags.push('Trend M15 baissier'), details.push('❌ Tendance M15 baissière');
 
-  // Patterns
   const pattern = detectMultiCandlePattern(data.slice(-4));
-  if (pattern === '🟩 Avalement haussier') tags.push('Pattern haussier'), details.push('✅ Pattern : Avalement haussier');
-  else if (pattern === '🟥 Avalement baissier') tags.push('Pattern baissier'), details.push('❌ Pattern : Avalement baissier');
+  if (pattern === '🟩 Avalement haussier') tags.push('Pattern haussier'), details.push('✅ Avalement haussier');
+  else if (pattern === '🟥 Avalement baissier') tags.push('Pattern baissier'), details.push('❌ Avalement baissier');
 
-  // Volatilité
   const atrPips = lastATR * 10000;
   if (lastATR < 0.0004) tags.push('Volatilité faible'), details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips)`);
   else if (lastATR > 0.0015) tags.push('Volatilité élevée'), details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips)`);
   else tags.push('Volatilité idéale'), details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips)`);
 
-  // Supports & Résistances
   const { lastHigh, lastLow, supportStrength, resistanceStrength } = detectSupportResistanceStrength(data);
   const distanceToResistance = Math.abs(price - lastHigh);
   const distanceToSupport = Math.abs(price - lastLow);
-  if (distanceToResistance <= lastATR * 0.5) {
-    tags.push('Proche résistance');
-    details.push(`⚠️ Prix proche d’une résistance (à ${Math.round(distanceToResistance * 10000)} pips)`);
-    if (resistanceStrength >= 2) tags.push('Résistance forte'), details.push(`🔴 Résistance détectée (force ${resistanceStrength}/3)`);
-  }
-  if (distanceToSupport <= lastATR * 0.5) {
-    tags.push('Proche support');
-    details.push(`⚠️ Prix proche d’un support (à ${Math.round(distanceToSupport * 10000)} pips)`);
-    if (supportStrength >= 2) tags.push('Support fort'), details.push(`🟢 Support détecté (force ${supportStrength}/3)`);
-  }
+  if (distanceToResistance <= lastATR * 0.5) { tags.push('Proche résistance'); details.push(`⚠️ Proche résistance (${Math.round(distanceToResistance*10000)} pips)`); if (resistanceStrength>=2) tags.push('Résistance forte'), details.push(`🔴 Force ${resistanceStrength}`); }
+  if (distanceToSupport <= lastATR * 0.5) { tags.push('Proche support'); details.push(`⚠️ Proche support (${Math.round(distanceToSupport*10000)} pips)`); if (supportStrength>=2) tags.push('Support fort'), details.push(`🟢 Force ${supportStrength}`); }
 
-  // Scoring adaptatif
   let adaptiveScore = applyDeepWeights(tags, context);
   let proximityBonus = 0;
-  if (distanceToSupport <= lastATR * 0.5) proximityBonus += supportStrength * (adaptiveScore >= 0 ? 0.5 : -0.5);
-  if (distanceToResistance <= lastATR * 0.5) proximityBonus += resistanceStrength * (adaptiveScore <= 0 ? 0.5 : -0.5);
+  if (distanceToSupport<= lastATR*0.5) proximityBonus += supportStrength*(adaptiveScore>=0?0.5:-0.5);
+  if (distanceToResistance<= lastATR*0.5) proximityBonus += resistanceStrength*(adaptiveScore<=0?0.5:-0.5);
   adaptiveScore += proximityBonus;
 
-  // Détection de rejet sur résistance forte
-  const possibleRebound = distanceToResistance <= lastATR * 0.3 && resistanceStrength >= 2 && lastStoch.k < lastStoch.d && lastMACD.MACD < lastMACD.signal;
-  if (adaptiveScore > 0 && possibleRebound) {
-    details.push('🛑 Rejet possible sur résistance : signal WAIT appliqué');
-    adaptiveScore = 0;
-  }
+  // Rejets résistance & support
+  const possibleResistanceRebound = distanceToResistance<= lastATR*0.3 && resistanceStrength>=2 && lastStoch.k< lastStoch.d && lastMACD.MACD< lastMACD.signal;
+  if (adaptiveScore>0 && possibleResistanceRebound) { details.push('🛑 Rejet résistance : WAIT'); adaptiveScore=0; }
+  const possibleSupportRebound = distanceToSupport<= lastATR*0.3 && supportStrength>=2 && lastStoch.k> lastStoch.d && lastMACD.MACD> lastMACD.signal;
+  if (adaptiveScore<0 && possibleSupportRebound) { details.push('🛑 Rebond support : WAIT'); adaptiveScore=0; }
 
-  // Détection de range trop étroit (14 unités)
-  const window = 6;
-  const recentHighRange = Math.max(...high.slice(-window));
-  const recentLowRange = Math.min(...low.slice(-window));
-  const rangeSize = recentHighRange - recentLowRange;
-  if (rangeSize < lastATR * 1.5) {
-    details.push('🔇 Range trop étroit détecté : signal WAIT');
-    adaptiveScore = 0;
-  }
+  // Range trop étroit (6 bougies)
+  const window=6;
+  const recentHighRange=Math.max(...high.slice(-window));
+  const recentLowRange=Math.min(...low.slice(-window));
+  if (recentHighRange-recentLowRange < lastATR*1.5) { details.push('🔇 Range étroit : WAIT'); adaptiveScore=0; }
 
-  // Calcul final du signal
-  const cappedScore = Math.max(-4, Math.min(4, adaptiveScore));
-  let confidence = +(50 + cappedScore * 12.5).toFixed(1);
-  let confidenceBear = +(100 - confidence).toFixed(1);
-  let signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
+  const cappedScore=Math.max(-4,Math.min(4,adaptiveScore));
+  let confidence=+(50+cappedScore*12.5).toFixed(1);
+  let confidenceBear=+(100-confidence).toFixed(1);
+  let signal=confidence>=65?'BUY':confidence<=35?'SELL':'WAIT';
 
-  // Seulement la tendance M5 peut annuler
-  if ((signal === 'BUY' && trend5 === 'BAISSIÈRE') || (signal === 'SELL' && trend5 === 'HAUSSIÈRE')) {
-    signal = 'WAIT';
-    details.push('⏸ Signal annulé - contradictoire avec tendance M5');
-  }
+  if ((signal==='BUY' && trend5==='BAISSIÈRE')||(signal==='SELL' && trend5==='HAUSSIÈRE')) { signal='WAIT'; details.push('⏸ Contradiction M5'); }
 
-  // Momentum triggers (MACD, RSI, Stochastique)
-  if (macd.length >= 2) {
-    const prev = macd.at(-2);
-    if (prev && lastMACD && ((prev.MACD <= prev.signal && lastMACD.MACD > lastMACD.signal) || (prev.MACD >= prev.signal && lastMACD.MACD < lastMACD.signal))) {
-      details.push('⚡ Croisement MACD détecté');
-    }
-  }
-  if (rsi.length >= 2 && Math.abs(rsi.at(-1) - rsi.at(-2)) > 5) {
-    details.push(`⚡ Mouvement RSI (${rsi.at(-2).toFixed(1)} ➝ ${rsi.at(-1).toFixed(1)})`);
-  }
-  if (stoch.length >= 2 && Math.abs(lastStoch.k - stoch.at(-2).k) > 10) {
-    details.push(`⚡ Accélération stochastique (${stoch.at(-2).k.toFixed(1)} ➝ ${lastStoch.k.toFixed(1)})`);
-  }
+  // Momentum triggers
+  if (macd.length>=2) { const prev=macd.at(-2); if (prev && lastMACD && ((prev.MACD<=prev.signal && lastMACD.MACD>lastMACD.signal)||(prev.MACD>=prev.signal && lastMACD.MACD<lastMACD.signal))) details.push('⚡ MACD croisé'); }
+  if (rsi.length>=2 && Math.abs(rsi.at(-1)-rsi.at(-2))>5) details.push(`⚡ RSI mouv (${rsi.at(-2).toFixed(1)}→${rsi.at(-1).toFixed(1)})`);
+  if (stoch.length>=2 && Math.abs(lastStoch.k-stoch.at(-2).k)>10) details.push(`⚡ Stoch acc (${stoch.at(-2).k.toFixed(1)}→${lastStoch.k.toFixed(1)})`);
 
-  // Contradictions signal vs pattern
-  let commentaire = null;
-  if ((signal === 'BUY' && pattern?.includes('🟥')) || (signal === 'SELL' && pattern?.includes('🟩'))) {
-    commentaire = `⚠️ Contradiction entre signal ${signal} et pattern ${pattern}`;
-    details.push(commentaire);
-  }
+  let commentaire=null;
+  if ((signal==='BUY'&&pattern?.includes('🟥'))||(signal==='SELL'&&pattern?.includes('🟩'))) { commentaire=`⚠️ Contradiction signal ${signal} vs pattern ${pattern}`; details.push(commentaire); }
 
-  return {
-    price,
-    signal,
-    confidence,
-    confidenceBear,
-    pattern,
-    trend5,
-    trend15,
-    tags,
-    details,
-    commentaire,
-    context: { tags, lastSignal: signal }
-  };
+  return { price, signal, confidence, confidenceBear, pattern, trend5, trend15, tags, details, commentaire, context };
 }
+
 
 
 
