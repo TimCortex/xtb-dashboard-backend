@@ -141,8 +141,6 @@ function scheduleSignalEvaluation(signalObj) {
   };
 
   activeSignals.set(id, signal);
-
-  // ✅ Déclarer le signal comme actif
   global.activeSignal = signal;
   global.isSignalActive = true;
 
@@ -156,33 +154,36 @@ function scheduleSignalEvaluation(signalObj) {
   const interval = setInterval(async () => {
     const currentTime = Date.now();
 
-    const latestPrice = await getCurrentPrice();
-    if (!latestPrice) return;
+    const latest = await getCurrentPrice(); // { bid, ask, mid }
+    if (!latest) return;
 
-    const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+    const priceToUse = direction === 'BUY' ? latest.bid : latest.ask;
+    const pips = (priceToUse - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
     const roundedPips = +pips.toFixed(1);
+
+    // 🛡 Filtre les pics aberrants
+    if (Math.abs(priceToUse - entryPrice) > 0.01) {
+      console.warn('⚠️ Écart de prix anormal ignoré', { entryPrice, priceToUse });
+      return;
+    }
 
     let outcome = null;
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
-    const expired = (currentTime - startTime > maxWaitTime);
+    const expired = currentTime - startTime > maxWaitTime;
 
     if (outcome || expired) {
       clearInterval(interval);
       activeSignals.delete(id);
-
-      // ✅ Libérer l’état global du signal
-      if (global.activeSignal?.timestamp === timestamp) {
-        global.activeSignal = null;
-        global.isSignalActive = false;
-      }
+      if (global.activeSignal?.timestamp === timestamp) global.activeSignal = null;
+      global.isSignalActive = false;
 
       const result = {
         timestamp,
         direction,
         entryPrice,
-        exitPrice: latestPrice,
+        exitPrice: priceToUse,
         pips: roundedPips,
         outcome: outcome || 'fail',
         context
@@ -592,12 +593,21 @@ async function getCurrentPrice() {
   try {
     const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
     const response = await axios.get(url);
-    return response.data?.last?.ask ?? null;
+    const last = response.data?.last;
+
+    if (!last || typeof last.ask !== 'number' || typeof last.bid !== 'number') return null;
+
+    return {
+      bid: +last.bid,
+      ask: +last.ask,
+      mid: +((last.bid + last.ask) / 2).toFixed(5)
+    };
   } catch (e) {
-    console.error('❌ Erreur prix Polygon:', e.message);
+    console.error('❌ Erreur getCurrentPrice:', e.message);
     return null;
   }
 }
+
 
 function getIGAuthHeaders() {
   return axios.post(`${IG_API_URL}/session`, {
