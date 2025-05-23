@@ -133,23 +133,28 @@ function applyWeights(tags, defaultScore = 0.4) {
 
 function scheduleSignalEvaluation(signalObj) {
   const id = Date.now();
-  activeSignals.set(id, signalObj);
-  global.isSignalActive = true; // 🟡 Blocage activé dès qu'un signal est en cours
+  const timestamp = new Date().toISOString();
 
-  const { direction, price: entryPrice, context } = signalObj;
+  const signal = {
+    ...signalObj,
+    timestamp
+  };
+
+  activeSignals.set(id, signal);
+  global.activeSignal = signal;
+
+  const { direction, price: entryPrice, context } = signal;
   const takeProfit = 1.5;
   const stopLoss = 5;
   const checkInterval = 5000;
   const maxWaitTime = 10 * 60 * 1000;
   const startTime = Date.now();
-  let retryPrice = null;
 
   const interval = setInterval(async () => {
     const currentTime = Date.now();
+
     const latestPrice = await getCurrentPrice();
     if (!latestPrice) return;
-
-    retryPrice = latestPrice;
 
     const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
     const roundedPips = +pips.toFixed(1);
@@ -158,17 +163,17 @@ function scheduleSignalEvaluation(signalObj) {
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
-    if (outcome || currentTime - startTime > maxWaitTime) {
+    if (outcome || (currentTime - startTime > maxWaitTime)) {
       clearInterval(interval);
       activeSignals.delete(id);
-      global.isSignalActive = false; // ✅ Libère l'autorisation d'un nouveau signal
+      if (global.activeSignal?.timestamp === timestamp) global.activeSignal = null;
 
       const result = {
-        timestamp: new Date().toISOString(),
+        timestamp,
         direction,
         entryPrice,
-        exitPrice: retryPrice,
-        pips: +((retryPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
+        exitPrice: latestPrice,
+        pips: roundedPips,
         outcome: outcome || 'fail',
         context
       };
@@ -179,6 +184,7 @@ function scheduleSignalEvaluation(signalObj) {
     }
   }, checkInterval);
 }
+
 
 
 
@@ -241,13 +247,13 @@ function getSignalHistoryHTML() {
       <td>${sig.direction}</td>
       <td>${sig.entryPrice.toFixed(5)}</td>
       <td>${sig.exitPrice?.toFixed(5) ?? '-'}</td>
-      <td>${sig.pips ?? '-'} pips</td>
+      <td>${sig.pips != null ? sig.pips + ' pips' : '-'}</td>
       <td>${sig.outcome === 'success' ? '✅' : sig.outcome === 'fail' ? '❌' : '-'}</td>
     </tr>`;
   });
 
   if (active) {
-    const since = new Date(active.timestamp);
+    const timestamp = new Date(active.timestamp).toLocaleString('fr-FR');
     rows.unshift(`<tr id="activeRow" class="blinking">
       <td><span id="activeTimer">⏳</span></td>
       <td>${active.direction}</td>
@@ -266,6 +272,7 @@ function getSignalHistoryHTML() {
       ${rows.join('')}
     </table>
   </div>
+
   <style>
     .blinking {
       animation: blink 1.5s infinite;
@@ -276,7 +283,9 @@ function getSignalHistoryHTML() {
       50% { opacity: 0.4; }
     }
   </style>
+
   <script>
+    window.globalActiveStart = ${active ? `new Date("${active.timestamp}").getTime();` : 'null'};
     setInterval(() => {
       const span = document.getElementById('activeTimer');
       if (span && window.globalActiveStart) {
@@ -284,12 +293,11 @@ function getSignalHistoryHTML() {
         const minutes = Math.floor(elapsed / 60);
         const seconds = elapsed % 60;
         span.textContent = minutes + "m" + seconds.toString().padStart(2, '0') + "s";
-
-
       }
     }, 1000);
   </script>`;
 }
+
 
 
 
@@ -1040,9 +1048,17 @@ cron.schedule('*/30 * * * * *', async () => {
 
     // 🛑 Ne rien faire si un signal est encore en cours d’évaluation
     if (global.isSignalActive) {
-      console.log('⏸ Signal ignoré — un trade est encore en cours d’évaluation.');
-      return;
-    }
+  console.log('⏸ Signal ignoré — un trade est encore en cours d’évaluation.');
+
+  global.latestSignal = {
+    message: `⏳ Signal en cours (${global.activeSignal?.direction || '-'}) - en attente de TP/SL...`,
+    date: new Date(),
+    context: global.activeSignal?.context || {},
+    price: global.activeSignal?.price || null
+  };
+
+  return;
+}
 
     const data5m = await fetchData(5);
     const data15m = await fetchData(15);
@@ -1224,7 +1240,6 @@ app.get('/dashboard', async (req, res) => {
           ${entryHTML}
           <div id="tagSummary">${signalSummaryHTML}</div>
           <div id="signalHistory">${signalHistoryHTML}</div>
-          <div id="signalHistory"></div>
 
 
           <div class="card">
