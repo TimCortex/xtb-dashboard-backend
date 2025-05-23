@@ -275,7 +275,7 @@ function getSignalHistoryHTML() {
 
   if (active) {
     const since = new Date(active.timestamp);
-    rows.unshift(`<tr id="activeRow" class="blinking" data-start="${signal.timestamp}">
+    rows.unshift(`<tr id="activeRow" class="blinking" data-start="${active.timestamp}">>
 >
       <td><span id="activeTimer">⏳</span></td>
       <td>${active.direction}</td>
