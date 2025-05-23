@@ -35,6 +35,8 @@ global.entryDirection = null;
 global.entryTime = null;
 global.latestSignal = null
 global.lastManualPosition = null;
+global.isSignalActive = false;
+
 
 
 let isPaused = false;
@@ -132,19 +134,22 @@ function applyWeights(tags, defaultScore = 0.4) {
 function scheduleSignalEvaluation(signalObj) {
   const id = Date.now();
   activeSignals.set(id, signalObj);
+  global.isSignalActive = true; // 🟡 Blocage activé dès qu'un signal est en cours
 
   const { direction, price: entryPrice, context } = signalObj;
-  const takeProfit = 1.5; // TP en pips
-  const stopLoss = 5;     // SL en pips
-  const checkInterval = 5000; // toutes les 5 secondes
-  const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
+  const takeProfit = 1.5;
+  const stopLoss = 5;
+  const checkInterval = 5000;
+  const maxWaitTime = 10 * 60 * 1000;
   const startTime = Date.now();
-  let retryPrice = null; // ✅ ici
+  let retryPrice = null;
 
   const interval = setInterval(async () => {
     const currentTime = Date.now();
     const latestPrice = await getCurrentPrice();
     if (!latestPrice) return;
+
+    retryPrice = latestPrice;
 
     const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
     const roundedPips = +pips.toFixed(1);
@@ -153,41 +158,18 @@ function scheduleSignalEvaluation(signalObj) {
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
-    if (outcome) {
+    if (outcome || currentTime - startTime > maxWaitTime) {
       clearInterval(interval);
       activeSignals.delete(id);
-
-      const result = {
-        timestamp: new Date().toISOString(),
-        direction,
-        entryPrice,
-        exitPrice: latestPrice,
-        pips: roundedPips,
-        outcome,
-        context
-      };
-
-      const existing = loadSignalResults();
-      existing.push(result);
-      saveSignalResults(existing);
-      return;
-    }
-
-    // Si le signal expire sans atteindre TP/SL → échec
-    if (currentTime - startTime > maxWaitTime) {
-      clearInterval(interval);
-      activeSignals.delete(id);
-
-      const retryPrice = await getCurrentPrice();
-      const retryPips = (retryPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+      global.isSignalActive = false; // ✅ Libère l'autorisation d'un nouveau signal
 
       const result = {
         timestamp: new Date().toISOString(),
         direction,
         entryPrice,
         exitPrice: retryPrice,
-        pips: +retryPips.toFixed(1),
-        outcome: 'fail',
+        pips: +((retryPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1)).toFixed(1),
+        outcome: outcome || 'fail',
         context
       };
 
@@ -197,6 +179,7 @@ function scheduleSignalEvaluation(signalObj) {
     }
   }, checkInterval);
 }
+
 
 
 
@@ -249,52 +232,65 @@ function loadSignalHistory() {
 }
 
 function getSignalHistoryHTML() {
-  const history = loadSignalResults().slice(-50).reverse(); // Derniers signaux, max 50
+  const results = loadSignalResults();
+  const active = global.activeSignal;
 
-  if (history.length === 0) {
-    return `
-      <div class="card">
-        <h2>📜 Historique des signaux</h2>
-        <p>Aucun signal enregistré pour l’instant.</p>
-      </div>`;
-  }
-
-  const rows = history.map(sig => {
-    const date = new Date(sig.timestamp).toLocaleString('fr-FR');
-    const color = sig.outcome === 'success' ? '#28a745' : sig.outcome === 'fail' ? '#e74c3c' : '#999';
-    const bg = sig.outcome === 'success' ? '#1f2e1f' : sig.outcome === 'fail' ? '#2e1f1f' : '#2f3136';
-
-    return `
-      <tr style="background: ${bg}; color: ${color};">
-        <td>${date}</td>
-        <td>${sig.direction}</td>
-        <td>${sig.entryPrice?.toFixed(5)}</td>
-        <td>${sig.exitPrice?.toFixed(5) ?? '—'}</td>
-        <td>${sig.pips ?? '—'}</td>
-        <td style="font-weight: bold;">${sig.outcome === 'success' ? '✅' : sig.outcome === 'fail' ? '❌' : '⏳'}</td>
-      </tr>`;
+  const rows = results.slice().reverse().map(sig => {
+    return `<tr>
+      <td>${new Date(sig.timestamp).toLocaleString('fr-FR')}</td>
+      <td>${sig.direction}</td>
+      <td>${sig.entryPrice.toFixed(5)}</td>
+      <td>${sig.exitPrice?.toFixed(5) ?? '-'}</td>
+      <td>${sig.pips ?? '-'} pips</td>
+      <td>${sig.outcome === 'success' ? '✅' : sig.outcome === 'fail' ? '❌' : '-'}</td>
+    </tr>`;
   });
 
+  if (active) {
+    const since = new Date(active.timestamp);
+    rows.unshift(`<tr id="activeRow" class="blinking">
+      <td><span id="activeTimer">⏳</span></td>
+      <td>${active.direction}</td>
+      <td>${active.price?.toFixed(5)}</td>
+      <td>-</td>
+      <td>...</td>
+      <td><strong>⏳ En cours</strong></td>
+    </tr>`);
+  }
+
   return `
-    <div class="card">
-      <h2>📜 Historique des signaux (derniers 50)</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Direction</th>
-            <th>Entrée</th>
-            <th>Sortie</th>
-            <th>Pips</th>
-            <th>Résultat</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.join('')}
-        </tbody>
-      </table>
-    </div>`;
+  <div class="card">
+    <h2>📜 Historique des signaux</h2>
+    <table>
+      <tr><th>Heure</th><th>Direction</th><th>Entrée</th><th>Sortie</th><th>Pips</th><th>Résultat</th></tr>
+      ${rows.join('')}
+    </table>
+  </div>
+  <style>
+    .blinking {
+      animation: blink 1.5s infinite;
+      background-color: #f0ad4e33;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  </style>
+  <script>
+    setInterval(() => {
+      const span = document.getElementById('activeTimer');
+      if (span && window.globalActiveStart) {
+        const elapsed = Math.floor((Date.now() - window.globalActiveStart) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        span.textContent = minutes + "m" + seconds.toString().padStart(2, '0') + "s";
+
+
+      }
+    }, 1000);
+  </script>`;
 }
+
 
 
 function saveSignalHistory(history) {
@@ -1042,6 +1038,12 @@ cron.schedule('*/30 * * * * *', async () => {
       };
     }
 
+    // 🛑 Ne rien faire si un signal est encore en cours d’évaluation
+    if (global.isSignalActive) {
+      console.log('⏸ Signal ignoré — un trade est encore en cours d’évaluation.');
+      return;
+    }
+
     const data5m = await fetchData(5);
     const data15m = await fetchData(15);
     const price = await getCurrentPrice();
@@ -1072,7 +1074,7 @@ cron.schedule('*/30 * * * * *', async () => {
     msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%\n`;
     msg += `🕒 **Tendance :** ${analysis.trend5}\n`;
     if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}\n`;
-    if (analysis.details && analysis.details.length) {
+    if (analysis.details?.length) {
       msg += '\n🧾 **Détails analyse technique :**\n' + analysis.details.map(d => `• ${d}`).join('\n');
     }
 
@@ -1081,23 +1083,19 @@ cron.schedule('*/30 * * * * *', async () => {
       msg += `\n📉 **Écart actuel :** ${Math.round((price - entryPrice) * 10000)} pips`;
     }
 
-    if (analysis.signal === 'WAIT' && analysis.details.some(d => d.includes('⏸ Signal répété'))) {
-      msg = `⏸ Pas de nouveau signal - aucune évolution significative depuis le dernier signal.\n\n` + msg;
-    }
-
     await sendToDiscord(msg);
 
     global.latestSignal = {
-  message: msg,
-  date: new Date(),
-  context: analysis.context,
-  price // 🔥 très important pour l’écart de prix
-};
-
+      message: msg,
+      date: new Date(),
+      context: analysis.context,
+      price
+    };
   } catch (e) {
     console.error('Erreur visuelle:', e.message);
   }
 });
+
 
 
 // Ajout GET /clear-entry pour test navigateur
@@ -1415,8 +1413,7 @@ app.get('/latest-tags-summary', (req, res) => {
 });
 
 app.get('/latest-signal-history', (req, res) => {
-  const html = getSignalHistoryHTML();
-  res.send(html);
+  res.send(getSignalHistoryHTML());
 });
 
 
