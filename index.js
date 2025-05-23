@@ -515,26 +515,28 @@ function getSignalSummaryHTML() {
   const tagStats = {};
   let successCount = 0, failCount = 0;
 
-  // 1. Agrégation succès/échecs par tag
   for (const sig of data) {
-    for (const tag of sig.context?.tags || []) {
-      tagStats[tag] = tagStats[tag] || { success: 0, fail: 0 };
-      sig.outcome === 'success' ? tagStats[tag].success++ : tagStats[tag].fail++;
+    for (const t of sig.context?.tags || []) {
+      // on récupère toujours une string pour la clé
+      const tagName = typeof t === 'object' && t.name ? t.name : t;
+      if (!tagStats[tagName]) tagStats[tagName] = { success: 0, fail: 0 };
+      if (sig.outcome === 'success') tagStats[tagName].success++;
+      else if (sig.outcome === 'fail') tagStats[tagName].fail++;
     }
-    sig.outcome === 'success' ? successCount++ : failCount++;
+    if (sig.outcome === 'success') successCount++;
+    else if (sig.outcome === 'fail') failCount++;
   }
 
-  if (!Object.keys(tagStats).length) {
-    return `<div class="card warning"><h2>📊 Historique des tags</h2><p>Aucun signal évalué.</p></div>`;
+  if (Object.keys(tagStats).length === 0) {
+    return `<div class="card warning"><h2>📊 Historique des tags</h2><p>Aucun signal évalué pour l’instant.</p></div>`;
   }
 
-  // 2. Construction des lignes avec barre de progression
-  const rows = Object.entries(tagStats).map(([tag, {success, fail}]) => {
+  const rows = Object.entries(tagStats).map(([tag, { success, fail }]) => {
     const total = success + fail;
-    const rate  = total ? (success/total)*100 : 0;
+    const rate  = total ? ((success / total) * 100) : 0;
     const pct   = rate.toFixed(1);
-    // Choix de la couleur selon le palier
-    const color = rate>=65 ? '#28a745' : rate<=35 ? '#e74c3c' : '#f0ad4e';
+    const color = rate >= 65 ? '#28a745' : rate <= 35 ? '#e74c3c' : '#f0ad4e';
+
     return `
       <tr>
         <td>${tag}</td>
@@ -548,14 +550,10 @@ function getSignalSummaryHTML() {
     `;
   }).join('');
 
-  // 3. Injection du CSS et du tableau
   return `
     <style>
-      .progress-bar {
-        width: 100%; background: #444; border-radius:4px; height:8px;
-        overflow:hidden; margin-bottom:4px;
-      }
-      .progress-fill { height:100%; transition: width .5s; }
+      .progress-bar { width:100%; background:#444; border-radius:4px; height:8px; overflow:hidden; }
+      .progress-fill { height:100%; transition:width .5s; }
       .progress-label { font-size:.8em; color:#ddd; margin-left:6px; }
       .tag-summary-table td { padding:6px; vertical-align:middle; }
     </style>
@@ -568,6 +566,7 @@ function getSignalSummaryHTML() {
     </div>
   `;
 }
+
 
 
 
