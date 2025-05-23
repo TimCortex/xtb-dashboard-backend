@@ -211,40 +211,6 @@ function scheduleSignalEvaluation(signalObj) {
 
 
 
-
-
-async function wasTpOrSlHit({ entryPrice, direction, startTime, takeProfit, stopLoss }) {
-  try {
-    const now = new Date();
-    const fromDate = new Date(startTime);
-    
-    const fromStr = fromDate.toISOString().split('T')[0]; // "2025-05-22"
-    const toStr = now.toISOString().split('T')[0];
-
-    const url = `https://api.polygon.io/v2/aggs/ticker/${SYMBOL}/range/1/minute/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=500&apiKey=${POLYGON_API_KEY}`;
-    const res = await axios.get(url);
-    const candles = res.data?.results || [];
-
-    for (const c of candles) {
-      const high = c.h, low = c.l;
-      const pipsHigh = (high - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
-      const pipsLow = (low - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
-
-      if ((direction === 'BUY' && pipsHigh >= takeProfit) || (direction === 'SELL' && pipsLow <= -takeProfit)) {
-        return { outcome: 'success', exitPrice: direction === 'BUY' ? high : low };
-      }
-      if ((direction === 'BUY' && pipsLow <= -stopLoss) || (direction === 'SELL' && pipsHigh >= stopLoss)) {
-        return { outcome: 'fail', exitPrice: direction === 'BUY' ? low : high };
-      }
-    }
-    return null;
-  } catch (e) {
-    console.error('❌ Erreur TP/SL bougies M1:', e.message);
-    return null;
-  }
-}
-
-
 function saveSignalResults(results) {
   fs.writeFileSync(SIGNAL_RESULT_FILE, JSON.stringify(results, null, 2));
 }
@@ -547,54 +513,62 @@ function generatePerformanceTable(data) {
 function getSignalSummaryHTML() {
   const data = loadSignalResults();
   const tagStats = {};
+  let successCount = 0, failCount = 0;
 
-  let successCount = 0;
-  let failCount = 0;
-
+  // 1. Agrégation succès/échecs par tag
   for (const sig of data) {
     for (const tag of sig.context?.tags || []) {
-      if (!tagStats[tag]) tagStats[tag] = { success: 0, fail: 0 };
-      if (sig.outcome === 'success') tagStats[tag].success++;
-      else if (sig.outcome === 'fail') tagStats[tag].fail++;
+      tagStats[tag] = tagStats[tag] || { success: 0, fail: 0 };
+      sig.outcome === 'success' ? tagStats[tag].success++ : tagStats[tag].fail++;
     }
-
-    if (sig.outcome === 'success') successCount++;
-    else if (sig.outcome === 'fail') failCount++;
+    sig.outcome === 'success' ? successCount++ : failCount++;
   }
 
-  if (Object.keys(tagStats).length === 0) {
-    return `<div class="card warning"><h2>📊 Historique des tags</h2><p>Aucun signal évalué pour l’instant.</p></div>`;
+  if (!Object.keys(tagStats).length) {
+    return `<div class="card warning"><h2>📊 Historique des tags</h2><p>Aucun signal évalué.</p></div>`;
   }
 
-  const rows = Object.entries(tagStats).map(([tag, { success, fail }]) => {
+  // 2. Construction des lignes avec barre de progression
+  const rows = Object.entries(tagStats).map(([tag, {success, fail}]) => {
     const total = success + fail;
-    const rate = total ? ((success / total) * 100).toFixed(1) : '0.0';
-    const color = rate >= 65 ? '#28a745' : rate <= 35 ? '#e74c3c' : '#f0ad4e';
+    const rate  = total ? (success/total)*100 : 0;
+    const pct   = rate.toFixed(1);
+    // Choix de la couleur selon le palier
+    const color = rate>=65 ? '#28a745' : rate<=35 ? '#e74c3c' : '#f0ad4e';
+    return `
+      <tr>
+        <td>${tag}</td>
+        <td>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pct}%; background:${color}"></div>
+          </div>
+          <span class="progress-label">${pct}%</span>
+        </td>
+      </tr>
+    `;
+  }).join('');
 
-    return `<tr>
-      <td>${tag}</td>
-      <td>${success}</td>
-      <td>${fail}</td>
-      <td style="color: ${color}; font-weight: bold;">${rate}%</td>
-    </tr>`;
-  });
-
+  // 3. Injection du CSS et du tableau
   return `
+    <style>
+      .progress-bar {
+        width: 100%; background: #444; border-radius:4px; height:8px;
+        overflow:hidden; margin-bottom:4px;
+      }
+      .progress-fill { height:100%; transition: width .5s; }
+      .progress-label { font-size:.8em; color:#ddd; margin-left:6px; }
+      .tag-summary-table td { padding:6px; vertical-align:middle; }
+    </style>
     <div class="card">
-      <h2>📊 Historique des tags & fiabilité</h2>
-      <div style="display:flex; gap: 30px; align-items: center;">
-        <div style="flex: 1;">
-          <table>
-            <tr><th>Tag</th><th>Succès</th><th>Échecs</th><th>Taux de réussite</th></tr>
-            ${rows.join('')}
-          </table>
-        </div>
-        <div style="width: 200px;">
-          <canvas id="pieChart" data-success="${successCount}" data-fail="${failCount}"></canvas>
-        </div>
-      </div>
-    </div>`;
+      <h2>📊 Historique des tags & importance</h2>
+      <table class="tag-summary-table">
+        <tr><th>Tag</th><th>Importance</th></tr>
+        ${rows}
+      </table>
+    </div>
+  `;
 }
+
 
 
 
@@ -713,15 +687,6 @@ function detectMultiCandlePattern(candles) {
   return null;
 }
 
-function analyzeM15(data) {
-  const close = data.map(c => c.c);
-  const ema50 = technicalIndicators.EMA.calculate({ period: 50, values: close });
-  const ema100 = technicalIndicators.EMA.calculate({ period: 100, values: close });
-  const price = close.at(-1);
-  return (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) ? 'HAUSSIÈRE'
-    : (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) ? 'BAISSIÈRE'
-      : 'INDÉTERMINÉE';
-}
 
 function analyzeTrendM5M15(data5m, data15m) {
   const close5 = data5m.map(c => c.c);
@@ -768,14 +733,21 @@ function analyzeTrendM5M15(data5m, data15m) {
 
 
 
-// ZenScalp - version enrichie avec scoring adaptatif intelligent, gestion des volatilités extrêmes, détection des rebonds et gestion du range trop étroit
+// ZenScalp - version enrichie avec scoring adaptatif intelligent, exposition des poids par tag
+
+
+// ZenScalp - version finale : gestion complète des poids, pauses et conditions avancées
 
 function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'INDÉTERMINÉE', context = {}) {
-  // Filtre des données
+  // Récupère les poids adaptatifs
+  const { scoreMap, comboMap } = getAdaptiveWeights();
+
+  // Filtre des données valides
   data = data.filter(c => c && typeof c.h === 'number' && typeof c.l === 'number' && typeof c.c === 'number' && typeof c.o === 'number');
   const tags = [];
   const details = [];
 
+  // Si données insuffisantes
   if (data.length < 50) {
     return {
       price: null,
@@ -785,17 +757,17 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
       pattern: null,
       trend5,
       trend15,
-      tags,
+      tags: [],
       details: ['❌ Analyse impossible - données insuffisantes'],
       commentaire: 'Erreur de données.',
-      context: { tags }
+      context: { ...context, tagWeights: {}, pauseUntil: context.pauseUntil }
     };
   }
 
   // Timestamp de la dernière bougie (ms depuis epoch)
   const lastTs = data.at(-1).t;
 
-  // Pause en cas de forte volatilité
+  // Pause si volatilité élevée en attente
   if (context.pauseUntil && lastTs < context.pauseUntil) {
     details.push('⏸ Pause volatilité élevée : attendre 5 minutes');
     return {
@@ -806,13 +778,14 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
       pattern: null,
       trend5,
       trend15,
-      tags,
+      tags: [],
       details,
       commentaire: 'Analyse en pause en raison de forte volatilité.',
       context
     };
   }
 
+  // Prépare les séries de prix
   const close = data.map(c => c.c);
   const high = data.map(c => c.h);
   const low = data.map(c => c.l);
@@ -832,12 +805,11 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
   const lastIchi = ichimoku.at(-1);
   const lastATR = atr.at(-1) ?? 0.001;
 
-  // Détection de volatilité extrême (>0.0020)
+  // Pause si volatilité extrême détectée
   const extremeVolThreshold = 0.0020;
   if (lastATR > extremeVolThreshold) {
     details.push('⚠️ Volatilité extrême détectée, pause 5 minutes');
     context.pauseUntil = lastTs + 5 * 60 * 1000;
-    // Passage en WAIT
     return {
       price,
       signal: 'WAIT',
@@ -846,81 +818,123 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
       pattern: null,
       trend5,
       trend15,
-      tags,
+      tags: [],
       details,
       commentaire: 'Analyse en pause en raison de forte volatilité.',
       context
     };
   }
 
-  // Analyse classique
-  if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) tags.push('EMA haussière'), details.push('✅ EMA50 > EMA100');
-  else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) tags.push('EMA baissière'), details.push('❌ EMA50 < EMA100');
-  if (rsi.at(-1) > 50) tags.push('RSI>50'), details.push('✅ RSI > 50');
-  else tags.push('RSI<50'), details.push('❌ RSI < 50');
-  if (lastMACD && lastMACD.MACD > lastMACD.signal) tags.push('MACD haussier'), details.push('✅ MACD haussier');
-  else if (lastMACD) tags.push('MACD baissier'), details.push('❌ MACD baissier');
-  if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) tags.push('Stoch haussier'), details.push('✅ Stochastique haussier');
-  else if (lastStoch && lastStoch.k < lastStoch.d && lastStoch.k > 20) tags.push('Stoch baissier'), details.push('❌ Stochastique baissier');
-  if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) tags.push('Ichimoku breakout'), details.push('✅ Ichimoku breakout');
-  else if (lastIchi && price < lastIchi.spanA && price < lastIchi.spanB && lastIchi.conversion < lastIchi.base) tags.push('Ichimoku breakdown'), details.push('❌ Ichimoku breakdown');
+  // Analyse des conditions de marché
+  if (price > ema50.at(-1) && ema50.at(-1) > ema100.at(-1)) { tags.push('EMA haussière'); details.push('✅ EMA50 > EMA100'); }
+  else if (price < ema50.at(-1) && ema50.at(-1) < ema100.at(-1)) { tags.push('EMA baissière'); details.push('❌ EMA50 < EMA100'); }
+  if (rsi.at(-1) > 50) { tags.push('RSI>50'); details.push('✅ RSI > 50'); }
+  else { tags.push('RSI<50'); details.push('❌ RSI < 50'); }
+  if (lastMACD && lastMACD.MACD > lastMACD.signal) { tags.push('MACD haussier'); details.push('✅ MACD haussier'); }
+  else if (lastMACD) { tags.push('MACD baissier'); details.push('❌ MACD baissier'); }
+  if (lastStoch && lastStoch.k > lastStoch.d && lastStoch.k < 80) { tags.push('Stoch haussier'); details.push('✅ Stochastique haussier'); }
+  else if (lastStoch) { tags.push('Stoch baissier'); details.push('❌ Stochastique baissier'); }
+  if (lastIchi && price > lastIchi.spanA && price > lastIchi.spanB && lastIchi.conversion > lastIchi.base) { tags.push('Ichimoku breakout'); details.push('✅ Ichimoku breakout'); }
+  else if (lastIchi) { tags.push('Ichimoku breakdown'); details.push('❌ Ichimoku breakdown'); }
 
-  if (trend5 === 'HAUSSIÈRE') tags.push('Trend M5 haussier'), details.push('✅ Tendance M5 haussière');
-  else if (trend5 === 'BAISSIÈRE') tags.push('Trend M5 baissier'), details.push('❌ Tendance M5 baissière');
-  if (trend15 === 'HAUSSIÈRE') tags.push('Trend M15 haussier'), details.push('✅ Tendance M15 haussière');
-  else if (trend15 === 'BAISSIÈRE') tags.push('Trend M15 baissier'), details.push('❌ Tendance M15 baissière');
+  // Tendances
+  if (trend5 === 'HAUSSIÈRE') { tags.push('Trend M5 haussier'); details.push('✅ Tendance M5 haussière'); }
+  else if (trend5 === 'BAISSIÈRE') { tags.push('Trend M5 baissier'); details.push('❌ Tendance M5 baissière'); }
+  if (trend15 === 'HAUSSIÈRE') { tags.push('Trend M15 haussier'); details.push('✅ Tendance M15 haussière'); }
+  else if (trend15 === 'BAISSIÈRE') { tags.push('Trend M15 baissier'); details.push('❌ Tendance M15 baissière'); }
 
+  // Patterns bougies
   const pattern = detectMultiCandlePattern(data.slice(-4));
-  if (pattern === '🟩 Avalement haussier') tags.push('Pattern haussier'), details.push('✅ Avalement haussier');
-  else if (pattern === '🟥 Avalement baissier') tags.push('Pattern baissier'), details.push('❌ Avalement baissier');
+  if (pattern === '🟩 Avalement haussier') { tags.push('Pattern haussier'); details.push('✅ Avalement haussier'); }
+  else if (pattern === '🟥 Avalement baissier') { tags.push('Pattern baissier'); details.push('❌ Avalement baissier'); }
 
+  // Volatilité relative
   const atrPips = lastATR * 10000;
-  if (lastATR < 0.0004) tags.push('Volatilité faible'), details.push(`⚠️ Volatilité trop faible (ATR: ${atrPips.toFixed(1)} pips)`);
-  else if (lastATR > 0.0015) tags.push('Volatilité élevée'), details.push(`⚠️ Volatilité trop élevée (ATR: ${atrPips.toFixed(1)} pips)`);
-  else tags.push('Volatilité idéale'), details.push(`✅ Volatilité idéale (ATR: ${atrPips.toFixed(1)} pips)`);
+  if (lastATR < 0.0004) { tags.push('Volatilité faible'); details.push(`⚠️ Volatilité faible (ATR ${atrPips.toFixed(1)} pips)`); }
+  else if (lastATR > 0.0015) { tags.push('Volatilité élevée'); details.push(`⚠️ Volatilité élevée (ATR ${atrPips.toFixed(1)} pips)`); }
+  else { tags.push('Volatilité idéale'); details.push(`✅ Volatilité idéale (ATR ${atrPips.toFixed(1)} pips)`); }
 
+  // Supports & résistances
   const { lastHigh, lastLow, supportStrength, resistanceStrength } = detectSupportResistanceStrength(data);
-  const distanceToResistance = Math.abs(price - lastHigh);
-  const distanceToSupport = Math.abs(price - lastLow);
-  if (distanceToResistance <= lastATR * 0.5) { tags.push('Proche résistance'); details.push(`⚠️ Proche résistance (${Math.round(distanceToResistance*10000)} pips)`); if (resistanceStrength>=2) tags.push('Résistance forte'), details.push(`🔴 Force ${resistanceStrength}`); }
-  if (distanceToSupport <= lastATR * 0.5) { tags.push('Proche support'); details.push(`⚠️ Proche support (${Math.round(distanceToSupport*10000)} pips)`); if (supportStrength>=2) tags.push('Support fort'), details.push(`🟢 Force ${supportStrength}`); }
+  const distRes = Math.abs(price - lastHigh);
+  const distSup = Math.abs(price - lastLow);
+  if (distRes <= lastATR * 0.5) { tags.push('Proche résistance'); details.push(`⚠️ Proche résistance (${Math.round(distRes*10000)} pips)`); if (resistanceStrength>=2) { tags.push('Résistance forte'); details.push(`🔴 Force ${resistanceStrength}`); }}
+  if (distSup <= lastATR * 0.5) { tags.push('Proche support'); details.push(`⚠️ Proche support (${Math.round(distSup*10000)} pips)`); if (supportStrength>=2) { tags.push('Support fort'); details.push(`🟢 Force ${supportStrength}`); }}
 
+  // Exposition des poids par tag
+  const tagWeights = {};
+  for (const tag of tags) {
+    tagWeights[tag] = +(scoreMap[tag] ?? 0.2).toFixed(2);
+  }
+  const detailedTags = tags.map(tag => ({ name: tag, weight: tagWeights[tag] }));
+
+  // Scoring adaptatif initial
   let adaptiveScore = applyDeepWeights(tags, context);
+  // Bonus/Malus de proximité
   let proximityBonus = 0;
-  if (distanceToSupport<= lastATR*0.5) proximityBonus += supportStrength*(adaptiveScore>=0?0.5:-0.5);
-  if (distanceToResistance<= lastATR*0.5) proximityBonus += resistanceStrength*(adaptiveScore<=0?0.5:-0.5);
+  if (distSup <= lastATR * 0.5) proximityBonus += supportStrength * (adaptiveScore >= 0 ? 0.5 : -0.5);
+  if (distRes <= lastATR * 0.5) proximityBonus += resistanceStrength * (adaptiveScore <= 0 ? 0.5 : -0.5);
   adaptiveScore += proximityBonus;
 
-  // Rejets résistance & support
-  const possibleResistanceRebound = distanceToResistance<= lastATR*0.3 && resistanceStrength>=2 && lastStoch.k< lastStoch.d && lastMACD.MACD< lastMACD.signal;
-  if (adaptiveScore>0 && possibleResistanceRebound) { details.push('🛑 Rejet résistance : WAIT'); adaptiveScore=0; }
-  const possibleSupportRebound = distanceToSupport<= lastATR*0.3 && supportStrength>=2 && lastStoch.k> lastStoch.d && lastMACD.MACD> lastMACD.signal;
-  if (adaptiveScore<0 && possibleSupportRebound) { details.push('🛑 Rebond support : WAIT'); adaptiveScore=0; }
+  // Rejets sur résistance et supports forts
+  const reboundRes = distRes <= lastATR * 0.3 && resistanceStrength>=2 && lastStoch.k<lastStoch.d && lastMACD.MACD<lastMACD.signal;
+  if (adaptiveScore>0 && reboundRes) { details.push('🛑 Rejet résistance : WAIT'); adaptiveScore = 0; }
+  const reboundSup = distSup <= lastATR * 0.3 && supportStrength>=2 && lastStoch.k>lastStoch.d && lastMACD.MACD>lastMACD.signal;
+  if (adaptiveScore<0 && reboundSup) { details.push('🛑 Rebond support : WAIT'); adaptiveScore = 0; }
 
   // Range trop étroit (6 bougies)
-  const window=6;
-  const recentHighRange=Math.max(...high.slice(-window));
-  const recentLowRange=Math.min(...low.slice(-window));
-  if (recentHighRange-recentLowRange < lastATR*1.5) { details.push('🔇 Range étroit : WAIT'); adaptiveScore=0; }
+  const windowSize = 6;
+  const highRange = Math.max(...high.slice(-windowSize));
+  const lowRange = Math.min(...low.slice(-windowSize));
+  if (highRange - lowRange < lastATR * 1.5) { details.push('🔇 Range étroit : WAIT'); adaptiveScore = 0; }
 
-  const cappedScore=Math.max(-4,Math.min(4,adaptiveScore));
-  let confidence=+(50+cappedScore*12.5).toFixed(1);
-  let confidenceBear=+(100-confidence).toFixed(1);
-  let signal=confidence>=65?'BUY':confidence<=35?'SELL':'WAIT';
+  // Calcul signal final
+  const capped = Math.max(-4, Math.min(4, adaptiveScore));
+  const confidence = +(50 + capped * 12.5).toFixed(1);
+  const confidenceBear = +(100 - confidence).toFixed(1);
+  let signal = confidence >= 65 ? 'BUY' : confidence <= 35 ? 'SELL' : 'WAIT';
 
-  if ((signal==='BUY' && trend5==='BAISSIÈRE')||(signal==='SELL' && trend5==='HAUSSIÈRE')) { signal='WAIT'; details.push('⏸ Contradiction M5'); }
+  // Annulation si contradictoire avec tendance M5
+  if ((signal==='BUY' && trend5==='BAISSIÈRE') || (signal==='SELL' && trend5==='HAUSSIÈRE')) {
+    signal = 'WAIT';
+    details.push('⏸ Contradiction avec M5');
+  }
 
-  // Momentum triggers
-  if (macd.length>=2) { const prev=macd.at(-2); if (prev && lastMACD && ((prev.MACD<=prev.signal && lastMACD.MACD>lastMACD.signal)||(prev.MACD>=prev.signal && lastMACD.MACD<lastMACD.signal))) details.push('⚡ MACD croisé'); }
-  if (rsi.length>=2 && Math.abs(rsi.at(-1)-rsi.at(-2))>5) details.push(`⚡ RSI mouv (${rsi.at(-2).toFixed(1)}→${rsi.at(-1).toFixed(1)})`);
-  if (stoch.length>=2 && Math.abs(lastStoch.k-stoch.at(-2).k)>10) details.push(`⚡ Stoch acc (${stoch.at(-2).k.toFixed(1)}→${lastStoch.k.toFixed(1)})`);
+  // Triggers de momentum
+  if (macd.length>=2) {
+    const prev = macd.at(-2);
+    if (prev && lastMACD && ((prev.MACD<=prev.signal && lastMACD.MACD>lastMACD.signal) || (prev.MACD>=prev.signal && lastMACD.MACD<lastMACD.signal))) {
+      details.push('⚡ Croisement MACD');
+    }
+  }
+  if (rsi.length>=2 && Math.abs(rsi.at(-1)-rsi.at(-2))>5) {
+    details.push(`⚡ Mouvement RSI (${rsi.at(-2).toFixed(1)}→${rsi.at(-1).toFixed(1)})`);
+  }
+  if (stoch.length>=2 && Math.abs(lastStoch.k-stoch.at(-2).k)>10) {
+    details.push(`⚡ Accélération Stoch (${stoch.at(-2).k.toFixed(1)}→${lastStoch.k.toFixed(1)})`);
+  }
 
-  let commentaire=null;
-  if ((signal==='BUY'&&pattern?.includes('🟥'))||(signal==='SELL'&&pattern?.includes('🟩'))) { commentaire=`⚠️ Contradiction signal ${signal} vs pattern ${pattern}`; details.push(commentaire); }
+  // Contradiction pattern
+  let commentaire = null;
+  if ((signal==='BUY' && pattern?.includes('🟥')) || (signal==='SELL' && pattern?.includes('🟩'))) {
+    commentaire = `⚠️ Contradiction signal ${signal} vs pattern ${pattern}`;
+    details.push(commentaire);
+  }
 
-  return { price, signal, confidence, confidenceBear, pattern, trend5, trend15, tags, details, commentaire, context };
+  return {
+    price,
+    signal,
+    confidence,
+    confidenceBear,
+    pattern,
+    trend5,
+    trend15,
+    tags: detailedTags,
+    details,
+    commentaire,
+    context: { ...context, pauseUntil: context.pauseUntil, tagWeights, lastSignal: signal }
+  };
 }
-
 
 
 
