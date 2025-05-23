@@ -141,7 +141,10 @@ function scheduleSignalEvaluation(signalObj) {
   };
 
   activeSignals.set(id, signal);
+
+  // ✅ Déclarer le signal comme actif
   global.activeSignal = signal;
+  global.isSignalActive = true;
 
   const { direction, price: entryPrice, context } = signal;
   const takeProfit = 1.5;
@@ -163,10 +166,17 @@ function scheduleSignalEvaluation(signalObj) {
     if (roundedPips >= takeProfit) outcome = 'success';
     else if (roundedPips <= -stopLoss) outcome = 'fail';
 
-    if (outcome || (currentTime - startTime > maxWaitTime)) {
+    const expired = (currentTime - startTime > maxWaitTime);
+
+    if (outcome || expired) {
       clearInterval(interval);
       activeSignals.delete(id);
-      if (global.activeSignal?.timestamp === timestamp) global.activeSignal = null;
+
+      // ✅ Libérer l’état global du signal
+      if (global.activeSignal?.timestamp === timestamp) {
+        global.activeSignal = null;
+        global.isSignalActive = false;
+      }
 
       const result = {
         timestamp,
@@ -184,6 +194,7 @@ function scheduleSignalEvaluation(signalObj) {
     }
   }, checkInterval);
 }
+
 
 
 
@@ -854,34 +865,6 @@ function generateVisualAnalysis(data, trend5 = 'INDÉTERMINÉE', trend15 = 'IND�
     details.push(`⚡ Accélération stochastique (${stoch.at(-2).k.toFixed(1)} ➝ ${lastStoch.k.toFixed(1)})`);
   }
 
-  // Anti-répétition
-  if (context?.lastSignal === signal && signal !== 'WAIT') {
-  const prevPrice = global.latestSignal?.price || 0;
-  const priceDiff = (price - prevPrice) * 10000; // toujours positif ou négatif selon variation
-  const priceThreshold = 2;
-
-  const indicatorsChanged =
-    tags.some(t => !(context?.tags || []).includes(t)) ||
-    (context?.tags || []).some(t => !tags.includes(t)) ||
-    context?.tags?.length !== tags.length;
-
-  const diffAbs = Math.abs(priceDiff);
-
-  console.log('🔁 Anti-répétition check:', {
-    signal,
-    prevPrice,
-    currentPrice: price,
-    diffAbs: diffAbs.toFixed(1),
-    indicatorsChanged
-  });
-
-  if (!indicatorsChanged || diffAbs < priceThreshold) {
-    signal = 'WAIT';
-    confidence = 50;
-    confidenceBear = 50;
-    details.push('⏸ Signal identique sans évolution notable — mis en attente.');
-  }
-}
 
 
   let commentaire = null;
