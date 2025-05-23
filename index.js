@@ -275,7 +275,8 @@ function getSignalHistoryHTML() {
 
   if (active) {
     const since = new Date(active.timestamp);
-    rows.unshift(`<tr id="activeRow" class="blinking">
+    rows.unshift(`<tr id="activeRow" class="blinking" data-start="${signal.timestamp}">
+>
       <td><span id="activeTimer">⏳</span></td>
       <td>${active.direction}</td>
       <td>${typeof active.price === 'number' ? active.price.toFixed(5) : '-'}</td>
@@ -1360,19 +1361,35 @@ app.get('/dashboard', async (req, res) => {
     }
   }
 
-  async function refreshSignalHistory() {
-    try {
-      const res = await fetch('/latest-signal-history');
-      const html = await res.text();
-      document.getElementById('signalHistory').innerHTML = html;
-      const activeRow = document.getElementById('activeRow');
-if (activeRow) {
-  window.globalActiveStart = Date.now(); // Redémarre le timer
-}
-    } catch (e) {
-      document.getElementById('signalHistory').innerHTML = "<p>⚠️ Erreur chargement historique signaux</p>";
+  let lastSignalStart = null;
+
+async function refreshSignalHistory() {
+  try {
+    const res = await fetch('/latest-signal-history');
+    const html = await res.text();
+
+    // Extraire le timestamp du signal actif depuis le HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const activeRow = tempDiv.querySelector('#activeRow');
+
+    // Si un signal actif est détecté
+    if (activeRow) {
+      const newStart = activeRow.getAttribute('data-start');
+      if (newStart !== lastSignalStart) {
+        lastSignalStart = newStart;
+        window.globalActiveStart = new Date(newStart).getTime();
+      }
     }
+
+    // Injecter le HTML une fois la vérification faite
+    document.getElementById('signalHistory').innerHTML = html;
+
+  } catch (e) {
+    document.getElementById('signalHistory').innerHTML = "<p>⚠️ Erreur chargement historique signaux</p>";
   }
+}
+
 
   refreshSignal();
   refreshTags();
