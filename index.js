@@ -135,8 +135,17 @@ function scheduleSignalEvaluation(signalObj) {
   const id = Date.now();
   const timestamp = new Date().toISOString();
 
+  // S’assurer que le prix d’entrée est bien un nombre
+  const entryPrice = typeof signalObj.price === 'number' ? signalObj.price : signalObj.price?.mid;
+
+  if (typeof entryPrice !== 'number') {
+    console.warn('❌ Prix d’entrée invalide, signal ignoré.');
+    return;
+  }
+
   const signal = {
     ...signalObj,
+    price: entryPrice,
     timestamp
   };
 
@@ -144,8 +153,8 @@ function scheduleSignalEvaluation(signalObj) {
   global.activeSignal = signal;
   global.isSignalActive = true;
 
-  const { direction, price: entryPrice, context } = signal;
-  const takeProfit = 1.5;
+  const { direction, context } = signal;
+  const takeProfit = 1.5; // en pips
   const stopLoss = 5;
   const checkInterval = 5000;
   const maxWaitTime = 10 * 60 * 1000;
@@ -153,19 +162,13 @@ function scheduleSignalEvaluation(signalObj) {
 
   const interval = setInterval(async () => {
     const currentTime = Date.now();
+    const latest = await getCurrentPrice();
+    const latestPrice = latest?.mid;
 
-    const latest = await getCurrentPrice(); // { bid, ask, mid }
-    if (!latest) return;
+    if (typeof latestPrice !== 'number') return;
 
-    const priceToUse = direction === 'BUY' ? latest.bid : latest.ask;
-    const pips = (priceToUse - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+    const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
     const roundedPips = +pips.toFixed(1);
-
-    // 🛡 Filtre les pics aberrants
-    if (Math.abs(priceToUse - entryPrice) > 0.01) {
-      console.warn('⚠️ Écart de prix anormal ignoré', { entryPrice, priceToUse });
-      return;
-    }
 
     let outcome = null;
     if (roundedPips >= takeProfit) outcome = 'success';
@@ -176,14 +179,17 @@ function scheduleSignalEvaluation(signalObj) {
     if (outcome || expired) {
       clearInterval(interval);
       activeSignals.delete(id);
-      if (global.activeSignal?.timestamp === timestamp) global.activeSignal = null;
-      global.isSignalActive = false;
+
+      if (global.activeSignal?.timestamp === timestamp) {
+        global.activeSignal = null;
+        global.isSignalActive = false;
+      }
 
       const result = {
         timestamp,
         direction,
         entryPrice,
-        exitPrice: priceToUse,
+        exitPrice: latestPrice,
         pips: roundedPips,
         outcome: outcome || 'fail',
         context
@@ -195,6 +201,7 @@ function scheduleSignalEvaluation(signalObj) {
     }
   }, checkInterval);
 }
+
 
 
 
@@ -257,19 +264,19 @@ function getSignalHistoryHTML() {
     return `<tr>
       <td>${new Date(sig.timestamp).toLocaleString('fr-FR')}</td>
       <td>${sig.direction}</td>
-      <td>${sig.entryPrice.toFixed(5)}</td>
-      <td>${sig.exitPrice?.toFixed(5) ?? '-'}</td>
-      <td>${sig.pips != null ? sig.pips + ' pips' : '-'}</td>
+      <td>${typeof sig.entryPrice === 'number' ? sig.entryPrice.toFixed(5) : '-'}</td>
+      <td>${typeof sig.exitPrice === 'number' ? sig.exitPrice.toFixed(5) : '-'}</td>
+      <td>${typeof sig.pips === 'number' ? `${sig.pips} pips` : '-'}</td>
       <td>${sig.outcome === 'success' ? '✅' : sig.outcome === 'fail' ? '❌' : '-'}</td>
     </tr>`;
   });
 
   if (active) {
-    const timestamp = new Date(active.timestamp).toLocaleString('fr-FR');
+    const since = new Date(active.timestamp);
     rows.unshift(`<tr id="activeRow" class="blinking">
       <td><span id="activeTimer">⏳</span></td>
       <td>${active.direction}</td>
-      <td>${active.price?.toFixed(5)}</td>
+      <td>${typeof active.price === 'number' ? active.price.toFixed(5) : '-'}</td>
       <td>-</td>
       <td>...</td>
       <td><strong>⏳ En cours</strong></td>
@@ -284,7 +291,6 @@ function getSignalHistoryHTML() {
       ${rows.join('')}
     </table>
   </div>
-
   <style>
     .blinking {
       animation: blink 1.5s infinite;
@@ -295,9 +301,8 @@ function getSignalHistoryHTML() {
       50% { opacity: 0.4; }
     }
   </style>
-
   <script>
-    window.globalActiveStart = ${active ? `new Date("${active.timestamp}").getTime();` : 'null'};
+    window.globalActiveStart = window.globalActiveStart || Date.now();
     setInterval(() => {
       const span = document.getElementById('activeTimer');
       if (span && window.globalActiveStart) {
@@ -309,6 +314,7 @@ function getSignalHistoryHTML() {
     }, 1000);
   </script>`;
 }
+
 
 
 
@@ -1065,7 +1071,7 @@ cron.schedule('*/30 * * * * *', async () => {
     if (analysis.signal !== 'WAIT') {
       scheduleSignalEvaluation({
         direction: analysis.signal,
-        price,
+       price: price.mid,
         context: {
           tags: analysis.tags,
           confidence: analysis.confidence,
