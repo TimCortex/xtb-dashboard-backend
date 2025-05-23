@@ -135,17 +135,8 @@ function scheduleSignalEvaluation(signalObj) {
   const id = Date.now();
   const timestamp = new Date().toISOString();
 
-  // S’assurer que le prix d’entrée est bien un nombre
-  const entryPrice = typeof signalObj.price === 'number' ? signalObj.price : signalObj.price?.mid;
-
-  if (typeof entryPrice !== 'number') {
-    console.warn('❌ Prix d’entrée invalide, signal ignoré.');
-    return;
-  }
-
   const signal = {
     ...signalObj,
-    price: entryPrice,
     timestamp
   };
 
@@ -155,55 +146,66 @@ function scheduleSignalEvaluation(signalObj) {
 
   const { direction, context } = signal;
   const takeProfit = 1.5; // en pips
-  const stopLoss = 5;
+  const stopLoss = 5;     // en pips
   const checkInterval = 5000;
   const maxWaitTime = 10 * 60 * 1000;
   const startTime = Date.now();
 
-  const interval = setInterval(async () => {
-    const currentTime = Date.now();
-    const latest = await getCurrentPrice();
-    const latestPrice = latest?.mid;
-
-    if (typeof latestPrice !== 'number') return;
-
-    const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
-    const roundedPips = +pips.toFixed(1);
-
-    let outcome = null;
-    if (roundedPips >= takeProfit) outcome = 'success';
-    else if (roundedPips <= -stopLoss) outcome = 'fail';
-
-    const expired = currentTime - startTime > maxWaitTime;
-
-    if (outcome || expired) {
-      clearInterval(interval);
-      activeSignals.delete(id);
-
-      if (global.activeSignal?.timestamp === timestamp) {
-        global.activeSignal = null;
-        global.isSignalActive = false;
-      }
-
-      const result = {
-        timestamp,
-        direction,
-        entryPrice,
-        exitPrice: latestPrice,
-        pips: roundedPips,
-        outcome: outcome || 'fail',
-        context
-      };
-
-      const existing = loadSignalResults();
-      existing.push(result);
-      saveSignalResults(existing);
+  // Enregistre le prix d’entrée fiable (mid)
+  getCurrentPrice().then(initial => {
+    if (!initial || typeof initial.mid !== 'number') {
+      console.warn('❌ Prix d’entrée indisponible.');
+      global.activeSignal = null;
+      global.isSignalActive = false;
+      return;
     }
-  }, checkInterval);
+
+    const entryPrice = initial.mid;
+    signal.price = entryPrice; // pour dashboard
+    signal.entryPrice = entryPrice;
+
+    const interval = setInterval(async () => {
+      const currentTime = Date.now();
+
+      const latest = await getCurrentPrice();
+      if (!latest) return;
+      const latestPrice = latest.mid;
+
+      const pips = (latestPrice - entryPrice) * 10000 * (direction === 'BUY' ? 1 : -1);
+      const roundedPips = +pips.toFixed(1);
+
+      let outcome = null;
+      if (roundedPips >= takeProfit) outcome = 'success';
+      else if (roundedPips <= -stopLoss) outcome = 'fail';
+
+      const timeExpired = currentTime - startTime > maxWaitTime;
+
+      if (outcome || timeExpired) {
+        clearInterval(interval);
+        activeSignals.delete(id);
+
+        if (global.activeSignal?.timestamp === timestamp) {
+          global.activeSignal = null;
+          global.isSignalActive = false;
+        }
+
+        const result = {
+          timestamp,
+          direction,
+          entryPrice,
+          exitPrice: latestPrice,
+          pips: roundedPips,
+          outcome: outcome || 'fail',
+          context
+        };
+
+        const existing = loadSignalResults();
+        existing.push(result);
+        saveSignalResults(existing);
+      }
+    }, checkInterval);
+  });
 }
-
-
-
 
 
 
@@ -599,20 +601,24 @@ async function getCurrentPrice() {
   try {
     const url = `https://api.polygon.io/v1/last_quote/currencies/EUR/USD?apiKey=${POLYGON_API_KEY}`;
     const response = await axios.get(url);
-    const last = response.data?.last;
+    const quote = response.data?.last;
 
-    if (!last || typeof last.ask !== 'number' || typeof last.bid !== 'number') return null;
+    if (!quote || typeof quote.ask !== 'number' || typeof quote.bid !== 'number') {
+      console.warn('⚠️ Données Polygon incomplètes ou invalides:', quote);
+      return null;
+    }
 
-    return {
-      bid: +last.bid,
-      ask: +last.ask,
-      mid: +((last.bid + last.ask) / 2).toFixed(5)
-    };
+    const bid = quote.bid;
+    const ask = quote.ask;
+    const mid = +( (bid + ask) / 2 ).toFixed(5);
+
+    return { bid, ask, mid };
   } catch (e) {
-    console.error('❌ Erreur getCurrentPrice:', e.message);
+    console.error('❌ Erreur getCurrentPrice (Polygon):', e.message);
     return null;
   }
 }
+
 
 
 function getIGAuthHeaders() {
@@ -1071,7 +1077,6 @@ cron.schedule('*/30 * * * * *', async () => {
     if (analysis.signal !== 'WAIT') {
       scheduleSignalEvaluation({
         direction: analysis.signal,
-       price: price.mid,
         context: {
           tags: analysis.tags,
           confidence: analysis.confidence,
@@ -1085,7 +1090,7 @@ cron.schedule('*/30 * * * * *', async () => {
 
     let msg = `_________________________\n`;
     msg += `📈 **Signal : ${analysis.signal}**\n`;
-    msg += `🪙 **Prix :** ${price.toFixed(5)}\n`;
+    msg += `🪙 **Prix :** ${price.mid.toFixed(5)}\n`;
     msg += `📊 **Confiance :** 📈 ${analysis.confidence.toFixed(1)}% / 📉 ${analysis.confidenceBear.toFixed(1)}%\n`;
     msg += `🕒 **Tendance :** ${analysis.trend5}\n`;
     if (analysis.pattern) msg += `🕯️ **Pattern :** ${analysis.pattern}\n`;
