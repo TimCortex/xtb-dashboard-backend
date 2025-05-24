@@ -23,8 +23,8 @@ const WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1374330601431109694/g7C
 
 const IG_API_URL = 'https://api.ig.com/gateway/deal';
 const IG_USERNAME = 'timagnus';
-const IG_PASSWORD = 'Lyautey#1';
-const IG_API_KEY = 'abd969f1ef5b6c5abd190d6deab2ae3401dfebc1';
+const IG_PASSWORD = 'Test#1';
+const IG_API_KEY = 'kjhgkjhgkjhgkjhgkjhgkjhgkjhgkjhgkjghj';
 const IG_ACCOUNT_ID = 'EXM4S'; // remplace par ton vrai identifiant
 
 
